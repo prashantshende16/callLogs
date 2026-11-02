@@ -6,21 +6,17 @@ class PermissionService {
   /// The list of essential permissions required by Call Logger.
   static final List<Permission> requiredPermissions = [
     Permission.phone, // READ_PHONE_STATE, CALL_PHONE
-    Permission.contacts, // Optional helper for contact names if needed
-    // Permission.phoneState,
     Permission.notification, // POST_NOTIFICATIONS (Android 13+)
+    Permission.microphone, // RECORD_AUDIO for voice call recording
   ];
 
   /// Checks if all crucial permissions are currently granted.
   static Future<bool> areAllPermissionsGranted() async {
     final phoneStatus = await Permission.phone.status;
     final notifStatus = await Permission.notification.status;
+    final micStatus = await Permission.microphone.status;
 
-    // Direct check for phone permissions
-    final phoneOk = phoneStatus.isGranted;
-    final notifOk = notifStatus.isGranted;
-
-    return phoneOk && notifOk;
+    return phoneStatus.isGranted && notifStatus.isGranted && micStatus.isGranted;
   }
 
   /// Detailed permission status map
@@ -28,6 +24,7 @@ class PermissionService {
     return {
       Permission.phone: await Permission.phone.status,
       Permission.notification: await Permission.notification.status,
+      Permission.microphone: await Permission.microphone.status,
     };
   }
 
@@ -36,6 +33,7 @@ class PermissionService {
     final permissions = [
       Permission.phone,
       Permission.notification,
+      Permission.microphone,
     ];
     return await permissions.request();
   }

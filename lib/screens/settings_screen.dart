@@ -164,6 +164,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 20),
 
+          // Voice Call Recording Options
+          _buildSectionHeader('Voice Call Recording'),
+          Card(
+            elevation: 0.5,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Colors.grey.shade200),
+            ),
+            child: Column(
+              children: [
+                SwitchListTile(
+                  title: const Text(
+                    'Auto Speakerphone on Call',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: const Text(
+                    'Switches call to loudspeaker so microphone captures both sides clearly',
+                    style: TextStyle(fontSize: 12.5),
+                  ),
+                  value: settings.autoSpeakerphone,
+                  onChanged: (val) => settings.toggleAutoSpeakerphone(val),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                  child: Text(
+                    'On Android 10+, phone calls record through the microphone. Turning on speakerphone ensures the caller voice is loud enough to be clearly recorded.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
           // Receiver Number Configuration
           _buildSectionHeader('Device (Receiver) Phone Number'),
           Card(

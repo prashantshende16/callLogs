@@ -53,6 +53,46 @@ class MainActivity : FlutterActivity() {
                     result.success(number)
                 }
 
+                "playAudio" -> {
+                    val path = call.argument<String>("path")
+                    if (path != null) {
+                        val duration = playAudio(path)
+                        result.success(duration)
+                    } else {
+                        result.error("INVALID_PATH", "Path is required", null)
+                    }
+                }
+
+                "pauseAudio" -> {
+                    pauseAudio()
+                    result.success(true)
+                }
+
+                "resumeAudio" -> {
+                    resumeAudio()
+                    result.success(true)
+                }
+
+                "stopAudio" -> {
+                    stopAudio()
+                    result.success(true)
+                }
+
+                "seekAudio" -> {
+                    val positionMs = call.argument<Int>("position") ?: 0
+                    seekAudio(positionMs)
+                    result.success(true)
+                }
+
+                "getAudioDuration" -> {
+                    val path = call.argument<String>("path")
+                    if (path != null) {
+                        result.success(getAudioDuration(path))
+                    } else {
+                        result.success(0)
+                    }
+                }
+
                 else -> {
                     result.notImplemented()
                 }
@@ -151,7 +191,84 @@ class MainActivity : FlutterActivity() {
         return null
     }
 
+    private var mediaPlayer: android.media.MediaPlayer? = null
+
+    private fun playAudio(path: String): Int {
+        stopAudio()
+        return try {
+            val player = android.media.MediaPlayer().apply {
+                setDataSource(path)
+                prepare()
+                start()
+                setOnCompletionListener {
+                    runOnUiThread {
+                        methodChannel?.invokeMethod("onAudioPlaybackCompleted", null)
+                    }
+                }
+            }
+            mediaPlayer = player
+            player.duration
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error playing audio $path: ${e.message}", e)
+            0
+        }
+    }
+
+    private fun pauseAudio() {
+        try {
+            if (mediaPlayer?.isPlaying == true) {
+                mediaPlayer?.pause()
+            }
+        } catch (e: Exception) {
+            Log.w("MainActivity", "Error pausing audio: ${e.message}")
+        }
+    }
+
+    private fun resumeAudio() {
+        try {
+            mediaPlayer?.start()
+        } catch (e: Exception) {
+            Log.w("MainActivity", "Error resuming audio: ${e.message}")
+        }
+    }
+
+    private fun stopAudio() {
+        try {
+            mediaPlayer?.apply {
+                if (isPlaying) {
+                    stop()
+                }
+                release()
+            }
+        } catch (e: Exception) {
+            Log.w("MainActivity", "Error stopping audio: ${e.message}")
+        } finally {
+            mediaPlayer = null
+        }
+    }
+
+    private fun seekAudio(positionMs: Int) {
+        try {
+            mediaPlayer?.seekTo(positionMs)
+        } catch (e: Exception) {
+            Log.w("MainActivity", "Error seeking audio: ${e.message}")
+        }
+    }
+
+    private fun getAudioDuration(path: String): Int {
+        return try {
+            val mmr = android.media.MediaMetadataRetriever()
+            mmr.setDataSource(path)
+            val durationStr = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+            mmr.release()
+            durationStr?.toIntOrNull() ?: 0
+        } catch (e: Exception) {
+            0
+        }
+    }
+
     override fun onDestroy() {
+        stopAudio()
         CallStateReceiver.callEventListener = null
         super.onDestroy()
     }

@@ -8,14 +8,17 @@ class SettingsProvider with ChangeNotifier {
   static const String _keyMonitoring = 'is_monitoring_enabled';
   static const String _keyUserPhone = 'user_phone_number';
   static const String _keyInitialSyncDone = 'has_synced_initial_call_log';
+  static const String _keyAutoSpeakerphone = 'auto_speakerphone_recording';
 
   bool _isMonitoringEnabled = true;
+  bool _autoSpeakerphone = true;
   String _userPhoneNumber = '';
   String? _detectedPhoneNumber;
   bool _hasInitialSyncDone = false;
   bool _isInitialized = false;
 
   bool get isMonitoringEnabled => _isMonitoringEnabled;
+  bool get autoSpeakerphone => _autoSpeakerphone;
   String get userPhoneNumber => _userPhoneNumber;
   String? get detectedPhoneNumber => _detectedPhoneNumber;
   bool get hasInitialSyncDone => _hasInitialSyncDone;
@@ -40,6 +43,7 @@ class SettingsProvider with ChangeNotifier {
   Future<void> initSettings() async {
     final prefs = await SharedPreferences.getInstance();
     _isMonitoringEnabled = prefs.getBool(_keyMonitoring) ?? true;
+    _autoSpeakerphone = prefs.getBool(_keyAutoSpeakerphone) ?? true;
     _userPhoneNumber = prefs.getString(_keyUserPhone) ?? '';
     _hasInitialSyncDone = prefs.getBool(_keyInitialSyncDone) ?? false;
 
@@ -92,6 +96,14 @@ class SettingsProvider with ChangeNotifier {
     } else {
       await NativeCallService.stopMonitoring();
     }
+    notifyListeners();
+  }
+
+  /// Toggles automatic speakerphone activation during call recording
+  Future<void> toggleAutoSpeakerphone(bool enable) async {
+    _autoSpeakerphone = enable;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyAutoSpeakerphone, enable);
     notifyListeners();
   }
 

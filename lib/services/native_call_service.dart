@@ -11,8 +11,14 @@ class NativeCallService {
   static final StreamController<Map<String, dynamic>> _callEventStreamController =
       StreamController<Map<String, dynamic>>.broadcast();
 
+  static final StreamController<void> _audioCompletedController =
+      StreamController<void>.broadcast();
+
   /// Stream of real-time call events from CallStateReceiver
   static Stream<Map<String, dynamic>> get callEventStream => _callEventStreamController.stream;
+
+  /// Stream notified when audio finishes playing
+  static Stream<void> get audioCompletedStream => _audioCompletedController.stream;
 
   static bool _isInitialized = false;
 
@@ -28,6 +34,8 @@ class NativeCallService {
           final eventData = Map<String, dynamic>.from(arguments);
           _callEventStreamController.add(eventData);
         }
+      } else if (call.method == 'onAudioPlaybackCompleted') {
+        _audioCompletedController.add(null);
       }
     });
   }
@@ -77,6 +85,68 @@ class NativeCallService {
       return null;
     } on PlatformException catch (_) {
       return null;
+    }
+  }
+
+  /// Plays a recorded voice call audio file. Returns total duration in milliseconds.
+  static Future<int> playAudio(String path) async {
+    try {
+      final int? duration = await _channel.invokeMethod<int>('playAudio', {'path': path});
+      return duration ?? 0;
+    } on PlatformException catch (e) {
+      // ignore: avoid_print
+      print('playAudio error: ${e.message}');
+      return 0;
+    }
+  }
+
+  /// Pauses active audio playback
+  static Future<bool> pauseAudio() async {
+    try {
+      final bool? result = await _channel.invokeMethod<bool>('pauseAudio');
+      return result ?? false;
+    } on PlatformException catch (_) {
+      return false;
+    }
+  }
+
+  /// Resumes paused audio playback
+  static Future<bool> resumeAudio() async {
+    try {
+      final bool? result = await _channel.invokeMethod<bool>('resumeAudio');
+      return result ?? false;
+    } on PlatformException catch (_) {
+      return false;
+    }
+  }
+
+  /// Stops audio playback
+  static Future<bool> stopAudio() async {
+    try {
+      final bool? result = await _channel.invokeMethod<bool>('stopAudio');
+      return result ?? false;
+    } on PlatformException catch (_) {
+      return false;
+    }
+  }
+
+  /// Seeks to a specific millisecond position in the active audio file
+  static Future<bool> seekAudio(int positionMs) async {
+    try {
+      final bool? result = await _channel.invokeMethod<bool>('seekAudio', {'position': positionMs});
+      return result ?? false;
+    } on PlatformException catch (_) {
+      return false;
+    }
+  }
+
+  /// Gets audio duration in milliseconds
+  static Future<int> getAudioDuration(String path) async {
+    try {
+      final int? duration = await _channel.invokeMethod<int>('getAudioDuration', {'path': path});
+      return duration ?? 0;
+    } on PlatformException catch (_) {
+      return 0;
     }
   }
 }

@@ -107,6 +107,10 @@ class CallStateReceiver : BroadcastReceiver() {
             }
 
             TelephonyManager.CALL_STATE_OFFHOOK -> {
+                // Call connected (either incoming answered or outgoing connected)
+                // Start automatic voice call recording
+                CallAudioRecorder.startRecording(context, savedNumber ?: "Unknown")
+
                 if (lastState == TelephonyManager.CALL_STATE_RINGING) {
                     // Incoming call was answered
                     isIncoming = true
@@ -134,6 +138,9 @@ class CallStateReceiver : BroadcastReceiver() {
             }
 
             TelephonyManager.CALL_STATE_IDLE -> {
+                // Call ended -> Stop voice recording
+                val audioPath = CallAudioRecorder.stopRecording(context)
+
                 val endTime = System.currentTimeMillis()
                 val durationSec = if (callStartTime > 0) ((endTime - callStartTime) / 1000).toInt() else 0
 
@@ -160,7 +167,8 @@ class CallStateReceiver : BroadcastReceiver() {
                     "startTime" to callStartTime,
                     "endTime" to endTime,
                     "durationSeconds" to durationSec,
-                    "simSlot" to detectedSimSlot
+                    "simSlot" to detectedSimSlot,
+                    "audioPath" to audioPath
                 )
 
                 // Dispatch notification to Flutter. We also schedule a delayed call log query (1.5s)

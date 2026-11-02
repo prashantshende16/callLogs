@@ -114,6 +114,13 @@ class _PermissionScreenState extends State<PermissionScreen> with WidgetsBinding
                           'Shows a persistent foreground service notification ensuring 24/7 background call monitoring.',
                       isGranted: permProvider.areAllGranted,
                     ),
+                    _buildPermissionItem(
+                      icon: Icons.mic_outlined,
+                      title: 'Microphone (Voice Recording)',
+                      description:
+                          'Records call audio directly when a call is connected so you can listen back to conversations.',
+                      isGranted: permProvider.areAllGranted,
+                    ),
                   ],
                 ),
               ),

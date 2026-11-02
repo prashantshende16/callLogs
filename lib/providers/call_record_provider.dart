@@ -57,6 +57,7 @@ class CallRecordProvider with ChangeNotifier {
         final endTime = (event['endTime'] as int?) ?? DateTime.now().millisecondsSinceEpoch;
         final durationSeconds = (event['durationSeconds'] as int?) ?? 0;
         final simSlot = event['simSlot'] as String?;
+        final audioPath = event['audioPath'] as String?;
 
         final record = CallRecord(
           callerNumber: callerNumber,
@@ -67,6 +68,7 @@ class CallRecordProvider with ChangeNotifier {
           endTime: endTime,
           durationSeconds: durationSeconds,
           simSlot: simSlot,
+          audioPath: audioPath,
           createdAt: DateTime.now().millisecondsSinceEpoch,
         );
 

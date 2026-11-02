@@ -6,7 +6,7 @@ import '../models/call_record.dart';
 /// Manages SQLite database lifecycle, schema migrations, and CRUD operations.
 class DatabaseHelper {
   static const String _databaseName = 'call_logger.db';
-  static const int _databaseVersion = 1;
+  static const int _databaseVersion = 2;
 
   static const String tableCallRecords = 'call_records';
   static const String colId = 'id';
@@ -18,6 +18,7 @@ class DatabaseHelper {
   static const String colEndTime = 'end_time';
   static const String colDurationSeconds = 'duration_seconds';
   static const String colSimSlot = 'sim_slot';
+  static const String colAudioPath = 'audio_path';
   static const String colCreatedAt = 'created_at';
 
   // Singleton instance
@@ -58,6 +59,7 @@ class DatabaseHelper {
         $colEndTime INTEGER NOT NULL,
         $colDurationSeconds INTEGER NOT NULL,
         $colSimSlot TEXT,
+        $colAudioPath TEXT,
         $colCreatedAt INTEGER NOT NULL,
         UNIQUE($colCallerNumber, $colStartTime) ON CONFLICT IGNORE
       )
@@ -78,7 +80,7 @@ class DatabaseHelper {
   /// Versioned schema upgrade handler for future schema expansions
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      // Future upgrade path: example addition of new columns or indexes
+      await db.execute('ALTER TABLE $tableCallRecords ADD COLUMN $colAudioPath TEXT;');
     }
   }
 

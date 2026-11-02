@@ -11,6 +11,7 @@ class CallRecord {
   final int endTime; // epoch milliseconds
   final int durationSeconds;
   final String? simSlot;
+  final String? audioPath;
   final int createdAt; // epoch milliseconds
 
   CallRecord({
@@ -23,6 +24,7 @@ class CallRecord {
     required this.endTime,
     required this.durationSeconds,
     this.simSlot,
+    this.audioPath,
     required this.createdAt,
   });
 
@@ -38,6 +40,7 @@ class CallRecord {
       endTime: map['end_time'] as int? ?? 0,
       durationSeconds: map['duration_seconds'] as int? ?? 0,
       simSlot: map['sim_slot'] as String?,
+      audioPath: map['audio_path'] as String?,
       createdAt: map['created_at'] as int? ?? DateTime.now().millisecondsSinceEpoch,
     );
   }
@@ -53,6 +56,7 @@ class CallRecord {
       'end_time': endTime,
       'duration_seconds': durationSeconds,
       'sim_slot': simSlot,
+      'audio_path': audioPath,
       'created_at': createdAt,
     };
     if (id != null) {
@@ -71,6 +75,7 @@ class CallRecord {
     int? endTime,
     int? durationSeconds,
     String? simSlot,
+    String? audioPath,
     int? createdAt,
   }) {
     return CallRecord(
@@ -83,6 +88,7 @@ class CallRecord {
       endTime: endTime ?? this.endTime,
       durationSeconds: durationSeconds ?? this.durationSeconds,
       simSlot: simSlot ?? this.simSlot,
+      audioPath: audioPath ?? this.audioPath,
       createdAt: createdAt ?? this.createdAt,
     );
   }

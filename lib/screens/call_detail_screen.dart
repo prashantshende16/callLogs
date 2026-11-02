@@ -1,19 +1,123 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/call_record.dart';
 import '../providers/call_record_provider.dart';
+import '../services/native_call_service.dart';
 import '../widgets/call_type_badge.dart';
 
-/// CallDetailScreen displays comprehensive technical and metadata details for a logged call record.
-class CallDetailScreen extends StatelessWidget {
+/// CallDetailScreen displays comprehensive details for a call record
+/// and includes an interactive voice recording audio player.
+class CallDetailScreen extends StatefulWidget {
   final CallRecord record;
 
   const CallDetailScreen({
     Key? key,
     required this.record,
   }) : super(key: key);
+
+  @override
+  State<CallDetailScreen> createState() => _CallDetailScreenState();
+}
+
+class _CallDetailScreenState extends State<CallDetailScreen> {
+  bool _isPlaying = false;
+  int _totalDurationMs = 0;
+  int _currentPositionMs = 0;
+  Timer? _playbackTimer;
+  StreamSubscription<void>? _playbackCompletedSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _initAudio();
+  }
+
+  Future<void> _initAudio() async {
+    final path = widget.record.audioPath;
+    if (path != null && File(path).existsSync()) {
+      final dur = await NativeCallService.getAudioDuration(path);
+      if (mounted) {
+        setState(() {
+          _totalDurationMs = dur;
+        });
+      }
+    }
+
+    _playbackCompletedSub = NativeCallService.audioCompletedStream.listen((_) {
+      if (mounted) {
+        setState(() {
+          _isPlaying = false;
+          _currentPositionMs = 0;
+        });
+        _playbackTimer?.cancel();
+      }
+    });
+  }
+
+  void _startTimer() {
+    _playbackTimer?.cancel();
+    _playbackTimer = Timer.periodic(const Duration(milliseconds: 200), (timer) {
+      if (_isPlaying && mounted) {
+        setState(() {
+          _currentPositionMs += 200;
+          if (_totalDurationMs > 0 && _currentPositionMs >= _totalDurationMs) {
+            _currentPositionMs = _totalDurationMs;
+            _isPlaying = false;
+            timer.cancel();
+          }
+        });
+      }
+    });
+  }
+
+  Future<void> _togglePlayPause() async {
+    final path = widget.record.audioPath;
+    if (path == null || !File(path).existsSync()) return;
+
+    if (_isPlaying) {
+      await NativeCallService.pauseAudio();
+      _playbackTimer?.cancel();
+      setState(() => _isPlaying = false);
+    } else {
+      if (_currentPositionMs == 0) {
+        final dur = await NativeCallService.playAudio(path);
+        if (dur > 0) _totalDurationMs = dur;
+      } else {
+        await NativeCallService.resumeAudio();
+      }
+      setState(() => _isPlaying = true);
+      _startTimer();
+    }
+  }
+
+  Future<void> _seek(double val) async {
+    final posMs = val.toInt();
+    setState(() => _currentPositionMs = posMs);
+    await NativeCallService.seekAudio(posMs);
+  }
+
+  Future<void> _shareAudio() async {
+    final path = widget.record.audioPath;
+    if (path != null && File(path).existsSync()) {
+      await Share.shareXFiles(
+        [XFile(path, mimeType: 'audio/mp4')],
+        text: 'Call recording with ${widget.record.callerNumber}',
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _playbackTimer?.cancel();
+    _playbackCompletedSub?.cancel();
+    NativeCallService.stopAudio();
+    super.dispose();
+  }
 
   void _copyToClipboard(BuildContext context, String text, String label) {
     Clipboard.setData(ClipboardData(text: text));
@@ -30,7 +134,7 @@ class CallDetailScreen extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Call Record'),
-        content: Text('Are you sure you want to permanently delete the record for ${record.callerNumber}?'),
+        content: Text('Are you sure you want to permanently delete the record for ${widget.record.callerNumber}?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -45,9 +149,9 @@ class CallDetailScreen extends StatelessWidget {
       ),
     );
 
-    if (confirmed == true && record.id != null) {
+    if (confirmed == true && widget.record.id != null) {
       if (context.mounted) {
-        await Provider.of<CallRecordProvider>(context, listen: false).deleteRecord(record.id!);
+        await Provider.of<CallRecordProvider>(context, listen: false).deleteRecord(widget.record.id!);
         if (context.mounted) {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -58,8 +162,16 @@ class CallDetailScreen extends StatelessWidget {
     }
   }
 
+  String _formatTimeMs(int ms) {
+    final sec = (ms / 1000).floor();
+    final m = sec ~/ 60;
+    final s = sec % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final record = widget.record;
     final dateFormat = DateFormat('EEEE, MMMM dd, yyyy  hh:mm:ss a');
 
     final startString = record.startTime > 0
@@ -72,11 +184,19 @@ class CallDetailScreen extends StatelessWidget {
         ? dateFormat.format(DateTime.fromMillisecondsSinceEpoch(record.createdAt))
         : 'N/A';
 
+    final hasAudio = record.audioPath != null && File(record.audioPath!).existsSync();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Call Details'),
         elevation: 0,
         actions: [
+          if (hasAudio)
+            IconButton(
+              icon: const Icon(Icons.share_outlined),
+              tooltip: 'Share Call Audio',
+              onPressed: _shareAudio,
+            ),
           IconButton(
             icon: const Icon(Icons.delete_outline, color: Colors.red),
             tooltip: 'Delete Record',
@@ -131,6 +251,92 @@ class CallDetailScreen extends StatelessWidget {
 
             const SizedBox(height: 16),
 
+            // Voice Recording Player Card
+            if (hasAudio) ...[
+              Card(
+                elevation: 1,
+                color: Colors.purple.shade50.withValues(alpha: 0.4),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(color: Colors.purple.shade200),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.purple.shade100,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(Icons.mic, color: Colors.purple.shade800, size: 20),
+                              ),
+                              const SizedBox(width: 10),
+                              const Text(
+                                'Voice Recording',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.share, size: 20, color: Colors.purple),
+                            tooltip: 'Share Recording',
+                            onPressed: _shareAudio,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Slider(
+                        value: _currentPositionMs.toDouble().clamp(0.0, (_totalDurationMs > 0 ? _totalDurationMs : 1000).toDouble()),
+                        max: (_totalDurationMs > 0 ? _totalDurationMs : 1000).toDouble(),
+                        onChanged: _seek,
+                        activeColor: Colors.purple,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              _formatTimeMs(_currentPositionMs),
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                            ),
+                            Text(
+                              _formatTimeMs(_totalDurationMs),
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Center(
+                        child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.purple.shade700,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                          ),
+                          icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow),
+                          label: Text(_isPlaying ? 'Pause' : 'Play Recording'),
+                          onPressed: _togglePlayPause,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
             // Metadata Card
             Card(
               elevation: 0.5,
@@ -173,6 +379,14 @@ class CallDetailScreen extends StatelessWidget {
                       label: 'SIM Slot / Carrier',
                       value: record.simSlot ?? 'Default SIM',
                     ),
+                    if (hasAudio) ...[
+                      const Divider(height: 1),
+                      _buildDetailRow(
+                        icon: Icons.audio_file_outlined,
+                        label: 'Recording File',
+                        value: record.audioPath!.split('/').last,
+                      ),
+                    ],
                     const Divider(height: 1),
                     _buildDetailRow(
                       icon: Icons.play_arrow_outlined,
@@ -257,4 +471,3 @@ class CallDetailScreen extends StatelessWidget {
     );
   }
 }
-

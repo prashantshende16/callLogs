@@ -130,6 +130,30 @@ class CallRecordTile extends StatelessWidget {
                         runSpacing: 4,
                         children: [
                           CallTypeBadge(callType: record.callType),
+                          if (record.audioPath != null && record.audioPath!.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.purple.shade50,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: Colors.purple.shade200),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.mic, size: 11, color: Colors.purple.shade700),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    'Audio',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.purple.shade700,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           if (record.simSlot != null && record.simSlot!.isNotEmpty)
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
