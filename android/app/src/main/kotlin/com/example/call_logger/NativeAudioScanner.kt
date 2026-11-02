@@ -10,15 +10,15 @@ import java.io.File
 /**
  * NativeAudioScanner
  *
- * Scans, finds, and automatically copies call recordings from native dialers
- * (Vivo, Realme, Oppo, Samsung, Xiaomi, OnePlus) into the app's protected storage.
+ * Scans, finds, and automatically copies call recordings (.wav, .m4a, .mp3, .aac, .amr)
+ * from Vivo, Realme, Oppo, Samsung, and other Android OEM dialers into the app's protected storage.
  */
 object NativeAudioScanner {
 
     private const val TAG = "NativeAudioScanner"
 
-    // Comprehensive list of standard recording paths across Vivo, Realme, Samsung, Xiaomi & Oppo
-    private val STANDARD_DIRS by lazy {
+    // Primary directories across Vivo, Realme, Samsung, Xiaomi & Oppo
+    private val BASE_SEARCH_DIRS by lazy {
         val extStorage = Environment.getExternalStorageDirectory().absolutePath
         val musicDir = try { Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC).absolutePath } catch (_: Exception) { "$extStorage/Music" }
         val recDir = try {
@@ -30,15 +30,20 @@ object NativeAudioScanner {
         } catch (_: Exception) { "$extStorage/Recordings" }
 
         listOf(
-            // Vivo / iQOO paths
+            // Vivo & iQOO (.wav is very common here)
             "$extStorage/Record/Call",
             "$extStorage/Record",
             "$extStorage/Recordings/Call",
             "$extStorage/Sounds/Call",
+            "$extStorage/Sounds",
             "$extStorage/vivo/Record/Call",
             "$extStorage/vivo/Record",
+            "$extStorage/vivo",
+            "$extStorage/Recorder",
+            "$extStorage/VoiceRecorder",
+            "$extStorage/voice_recorder",
 
-            // Realme / Oppo (Realme UI / ColorOS) paths
+            // Realme & Oppo (.wav / .mp3 / .m4a / .aac)
             "$musicDir/Recordings/Call Recordings",
             "$recDir/Call Recordings",
             "$extStorage/Recordings/Call Recordings",
@@ -46,21 +51,46 @@ object NativeAudioScanner {
             "$musicDir/Recordings",
             "$extStorage/Recordings/Call",
             "$extStorage/ColorOS/Recordings/Call",
+            "$extStorage/ColorOS/Recordings",
+            "$extStorage/ColorOS",
 
-            // Samsung One UI paths
+            // Samsung One UI
             "$extStorage/Recordings/Call",
             "$extStorage/Call",
             "$musicDir/Recordings/Call",
 
-            // Xiaomi / Redmi / POCO MIUI paths
+            // Xiaomi / Redmi MIUI
             "$extStorage/MIUI/sound_recorder/call_rec",
             "$extStorage/Recordings/call_rec",
 
-            // Generic / AOSP paths
+            // Common / System standard paths
             "$recDir/Call",
             recDir,
-            "$musicDir/Call"
+            "$musicDir/Call",
+            musicDir,
+            "$extStorage/Call",
+            "$extStorage/Audio",
+            "$extStorage/Download"
         ).distinct()
+    }
+
+    /**
+     * Recursively collects all audio files (.wav, .m4a, .mp3, .aac, .amr) up to maxDepth.
+     */
+    private fun collectAudioFiles(dir: File, list: MutableList<File>, depth: Int = 0) {
+        if (depth > 3 || !dir.exists() || !dir.isDirectory) return
+        try {
+            val files = dir.listFiles() ?: return
+            for (f in files) {
+                if (f.isFile && isAudioFile(f)) {
+                    list.add(f)
+                } else if (f.isDirectory && !f.name.startsWith(".")) {
+                    collectAudioFiles(f, list, depth + 1)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error listing files in ${dir.absolutePath}: ${e.message}")
+        }
     }
 
     /**
@@ -74,7 +104,7 @@ object NativeAudioScanner {
     ): String? {
         val sanitizedNumber = number.replace(Regex("[^0-9]"), "")
 
-        // 1. Direct scan of all OEM directories
+        // 1. Direct recursive scan of all OEM directories (prioritizing .wav, .m4a, .mp3)
         val directMatch = scanDirectoriesForCall(sanitizedNumber, callStartTimeMs, callEndTimeMs)
         if (directMatch != null) {
             Log.d(TAG, "Found native recording via directory scan: ${directMatch.absolutePath}")
@@ -98,54 +128,52 @@ object NativeAudioScanner {
     ): File? {
         val candidateFiles = mutableListOf<File>()
 
-        for (dirPath in STANDARD_DIRS) {
-            try {
-                val dir = File(dirPath)
-                if (dir.exists() && dir.isDirectory) {
-                    val files = dir.listFiles { f ->
-                        f.isFile && isAudioFile(f)
-                    } ?: continue
-
-                    candidateFiles.addAll(files)
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Could not read directory $dirPath: ${e.message}")
+        for (dirPath in BASE_SEARCH_DIRS) {
+            val dir = File(dirPath)
+            if (dir.exists() && dir.isDirectory) {
+                collectAudioFiles(dir, candidateFiles, 0)
             }
         }
 
         if (candidateFiles.isEmpty()) return null
 
-        // Sort newest first
-        candidateFiles.sortByDescending { it.lastModified() }
+        // Deduplicate and sort newest first
+        val distinctFiles = candidateFiles.distinctBy { it.absolutePath }.sortedByDescending { it.lastModified() }
 
-        // Match 1: By phone number in filename
+        // Match 1: By phone number in filename (supports .wav, .mp3, .m4a, etc.)
         if (sanitizedNumber.length >= 4) {
             val last4 = sanitizedNumber.takeLast(4)
-            val matchedByNumber = candidateFiles.firstOrNull { file ->
+            val last7 = if (sanitizedNumber.length >= 7) sanitizedNumber.takeLast(7) else last4
+            val matchedByNumber = distinctFiles.firstOrNull { file ->
                 val digits = file.nameWithoutExtension.replace(Regex("[^0-9]"), "")
-                digits.contains(sanitizedNumber) || (last4.isNotEmpty() && digits.contains(last4))
+                digits.contains(sanitizedNumber) || digits.contains(last7) || (last4.isNotEmpty() && digits.contains(last4))
             }
             if (matchedByNumber != null) {
+                Log.d(TAG, "Matched file by phone number: ${matchedByNumber.name}")
                 return matchedByNumber
             }
         }
 
-        // Match 2: Modified within 45 seconds of call end time (or current time if call just ended)
-        val referenceTime = if (callEndTimeMs > 0) callEndTimeMs else System.currentTimeMillis()
-        val timeWindowMs = 60 * 1000 // 60 seconds
+        // Match 2: Timestamp matching for calls (whether just ended or from call history)
+        if (callStartTimeMs > 0 || callEndTimeMs > 0) {
+            val startRef = if (callStartTimeMs > 0) callStartTimeMs - (90 * 1000) else (callEndTimeMs - 180 * 1000)
+            val endRef = (if (callEndTimeMs > 0) callEndTimeMs else callStartTimeMs) + (180 * 1000)
 
-        val matchedByTime = candidateFiles.firstOrNull { file ->
-            val diff = Math.abs(file.lastModified() - referenceTime)
-            diff <= timeWindowMs
+            val matchedByTime = distinctFiles.firstOrNull { file ->
+                val mod = file.lastModified()
+                mod in startRef..endRef
+            }
+
+            if (matchedByTime != null) {
+                Log.d(TAG, "Matched file by call time window: ${matchedByTime.name}")
+                return matchedByTime
+            }
         }
 
-        if (matchedByTime != null) {
-            return matchedByTime
-        }
-
-        // Match 3: The newest audio file in any call recording directory modified in the last 2 minutes
-        val newest = candidateFiles.first()
-        if (Math.abs(System.currentTimeMillis() - newest.lastModified()) < 120 * 1000) {
+        // Match 3: If call literally just ended (within last 3 minutes), pick the newest recording file
+        val newest = distinctFiles.first()
+        if (Math.abs(System.currentTimeMillis() - newest.lastModified()) < 180 * 1000) {
+            Log.d(TAG, "Matched newest recently created file: ${newest.name}")
             return newest
         }
 
@@ -167,35 +195,44 @@ object NativeAudioScanner {
                 MediaStore.Audio.Media.DATE_MODIFIED
             )
 
-            val refSec = (if (callEndTimeMs > 0) callEndTimeMs else System.currentTimeMillis()) / 1000
-            val minSec = refSec - (3 * 60)
-            val maxSec = refSec + (3 * 60)
-
-            val selection = "${MediaStore.Audio.Media.DATE_MODIFIED} >= ? AND ${MediaStore.Audio.Media.DATE_MODIFIED} <= ?"
-            val selectionArgs = arrayOf(minSec.toString(), maxSec.toString())
             val sortOrder = "${MediaStore.Audio.Media.DATE_MODIFIED} DESC"
 
-            context.contentResolver.query(uri, projection, selection, selectionArgs, sortOrder)?.use { cursor ->
+            context.contentResolver.query(uri, projection, null, null, sortOrder)?.use { cursor ->
                 val dataIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
                 val nameIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                val modIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
+
+                val last4 = if (sanitizedNumber.length >= 4) sanitizedNumber.takeLast(4) else ""
 
                 while (cursor.moveToNext()) {
                     val filePath = cursor.getString(dataIndex) ?: continue
                     val fileName = cursor.getString(nameIndex) ?: ""
+                    val modSec = cursor.getLong(modIndex)
+                    val modMs = modSec * 1000
+
                     val file = File(filePath)
-
                     if (!file.exists() || file.length() < 100) continue
+                    if (!isAudioFile(file)) continue
 
-                    // Check if path is in a call recording directory
                     val isCallDir = filePath.contains("Call", ignoreCase = true) ||
                             filePath.contains("Record", ignoreCase = true) ||
-                            filePath.contains("call_rec", ignoreCase = true)
+                            filePath.contains("voice", ignoreCase = true) ||
+                            filePath.contains("sound", ignoreCase = true)
 
                     if (isCallDir) {
-                        if (sanitizedNumber.length >= 4 && fileName.contains(sanitizedNumber.takeLast(4))) {
+                        // Check phone number match
+                        if (last4.isNotEmpty() && fileName.contains(last4)) {
                             return file
                         }
-                        return file
+
+                        // Check time window match
+                        if (callStartTimeMs > 0 || callEndTimeMs > 0) {
+                            val startRef = if (callStartTimeMs > 0) callStartTimeMs - (90 * 1000) else (callEndTimeMs - 180 * 1000)
+                            val endRef = (if (callEndTimeMs > 0) callEndTimeMs else callStartTimeMs) + (180 * 1000)
+                            if (modMs in startRef..endRef) {
+                                return file
+                            }
+                        }
                     }
                 }
             }
@@ -220,13 +257,13 @@ object NativeAudioScanner {
                 if (!exists()) mkdirs()
             }
 
-            val safeNumber = number.replace(Regex("[^0-9+]"), "").ifEmpty { "unknown" }
-            val extension = sourceFile.extension.ifEmpty { "m4a" }
+            val safeNumber = number.replace(Regex("[^0-9+]"), "").ifEmpty { "call" }
+            val extension = sourceFile.extension.ifEmpty { "wav" }
             val backupFileName = "backup_${safeNumber}_${System.currentTimeMillis()}.$extension"
             val destFile = File(appRecordingsDir, backupFileName)
 
             sourceFile.copyTo(destFile, overwrite = true)
-            Log.d(TAG, "Backed up recording from ${sourceFile.absolutePath} to ${destFile.absolutePath}")
+            Log.d(TAG, "Successfully copied and backed up: ${destFile.absolutePath}")
             destFile.absolutePath
         } catch (e: Exception) {
             Log.e(TAG, "Failed to copy recording: ${e.message}", e)
@@ -234,35 +271,36 @@ object NativeAudioScanner {
         }
     }
 
-    private fun isAudioFile(file: File): Boolean {
+    /**
+     * Supports .wav, .m4a, .mp3, .amr, .aac, .ogg, .3gp
+     */
+    fun isAudioFile(file: File): Boolean {
         val ext = file.extension.lowercase()
-        return ext == "m4a" || ext == "mp3" || ext == "amr" || ext == "aac" || ext == "wav" || ext == "ogg" || ext == "3gp"
+        return ext == "wav" || ext == "m4a" || ext == "mp3" || ext == "amr" || ext == "aac" || ext == "ogg" || ext == "3gp"
     }
 
     /**
-     * Scans and returns all available native call recording files found across all paths.
+     * Scans and returns all available audio files across all device recording directories.
      */
     fun scanAllNativeRecordings(): List<Map<String, Any>> {
         val result = mutableListOf<Map<String, Any>>()
         val candidateFiles = mutableListOf<File>()
 
-        for (dirPath in STANDARD_DIRS) {
-            try {
-                val dir = File(dirPath)
-                if (dir.exists() && dir.isDirectory) {
-                    val files = dir.listFiles { f -> f.isFile && isAudioFile(f) } ?: continue
-                    candidateFiles.addAll(files)
-                }
-            } catch (_: Exception) {}
+        for (dirPath in BASE_SEARCH_DIRS) {
+            val dir = File(dirPath)
+            if (dir.exists() && dir.isDirectory) {
+                collectAudioFiles(dir, candidateFiles, 0)
+            }
         }
 
-        candidateFiles.sortByDescending { it.lastModified() }
+        val distinctFiles = candidateFiles.distinctBy { it.absolutePath }.sortedByDescending { it.lastModified() }
 
-        for (file in candidateFiles) {
+        for (file in distinctFiles) {
             result.add(
                 mapOf(
                     "path" to file.absolutePath,
                     "name" to file.name,
+                    "extension" to file.extension.lowercase(),
                     "size" to file.length(),
                     "lastModified" to file.lastModified()
                 )

@@ -183,5 +183,21 @@ class NativeCallService {
       return [];
     }
   }
+
+  /// Copies an audio file (.wav, .m4a, .mp3) into app backup storage
+  static Future<String?> copyAudioToAppStorage(String sourcePath, String number) async {
+    try {
+      final String? copiedPath = await _channel.invokeMethod<String>(
+        'copyAudioToAppStorage',
+        {
+          'path': sourcePath,
+          'number': number,
+        },
+      );
+      return copiedPath;
+    } on PlatformException catch (_) {
+      return null;
+    }
+  }
 }
 

@@ -106,6 +106,17 @@ class MainActivity : FlutterActivity() {
                     result.success(recordings)
                 }
 
+                "copyAudioToAppStorage" -> {
+                    val path = call.argument<String>("path") ?: ""
+                    val number = call.argument<String>("number") ?: "call"
+                    if (path.isNotEmpty()) {
+                        val copied = NativeAudioScanner.backupToAppStorage(this, java.io.File(path), number)
+                        result.success(copied)
+                    } else {
+                        result.success(null)
+                    }
+                }
+
                 else -> {
                     result.notImplemented()
                 }

@@ -177,6 +177,7 @@ class _CallDetailScreenState extends State<CallDetailScreen> {
                     final item = list[index];
                     final name = item['name'] as String? ?? 'Recording';
                     final path = item['path'] as String? ?? '';
+                    final ext = (item['extension'] as String? ?? name.split('.').last).toUpperCase();
                     final size = item['size'] as int? ?? 0;
                     final sizeKb = (size / 1024).round();
                     final modTime = item['lastModified'] as int? ?? 0;
@@ -187,26 +188,42 @@ class _CallDetailScreenState extends State<CallDetailScreen> {
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: Container(
-                        padding: const EdgeInsets.all(8),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                         decoration: BoxDecoration(
-                          color: Colors.purple.shade50,
-                          shape: BoxShape.circle,
+                          color: ext == 'WAV' ? Colors.blue.shade50 : Colors.purple.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: ext == 'WAV' ? Colors.blue.shade200 : Colors.purple.shade200,
+                          ),
                         ),
-                        child: Icon(Icons.mic, color: Colors.purple.shade700, size: 20),
+                        child: Text(
+                          ext,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: ext == 'WAV' ? Colors.blue.shade800 : Colors.purple.shade800,
+                          ),
+                        ),
                       ),
                       title: Text(name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                      subtitle: Text('$dateStr  •  ${sizeKb}KB', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                      subtitle: Text('$dateStr  •  ${sizeKb}KB\n$path', style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600), maxLines: 2, overflow: TextOverflow.ellipsis),
                       trailing: const Icon(Icons.arrow_forward_ios, size: 14),
                       onTap: () async {
                         Navigator.of(ctx).pop();
                         if (widget.record.id != null) {
-                          await DatabaseHelper.instance.updateAudioPath(widget.record.id!, path);
+                          // Copy to app storage backup
+                          final backupPath = await NativeCallService.copyAudioToAppStorage(
+                            path,
+                            widget.record.callerNumber,
+                          ) ?? path;
+
+                          await DatabaseHelper.instance.updateAudioPath(widget.record.id!, backupPath);
                           if (mounted) {
                             Provider.of<CallRecordProvider>(context, listen: false).loadRecords();
                             setState(() {});
                             _initAudio();
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Linked $name to this call!')),
+                              SnackBar(content: Text('Copied and linked $name to this call!')),
                             );
                           }
                         }
