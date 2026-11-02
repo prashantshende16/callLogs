@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 import '../providers/call_record_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/export_service.dart';
 import '../services/native_call_service.dart';
+import 'pin_lock_screen.dart';
 
 /// SettingsScreen provides configuration for:
 /// - Monitoring toggle (starts/stops native foreground service)
@@ -110,6 +112,94 @@ class _SettingsScreenState extends State<SettingsScreen> {
         SnackBar(content: Text('Imported $count historical call records')),
       );
     }
+  }
+
+  void _openChangePassword() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const PinLockScreen(mode: PinScreenMode.change),
+      ),
+    );
+  }
+
+  void _openResetPasswordDialog() {
+    final resetController = TextEditingController();
+    String? dialogError;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Row(
+                children: [
+                  Icon(Icons.lock_reset, color: Color(0xFF1E3A8A)),
+                  SizedBox(width: 8),
+                  Text('Reset Password'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Enter the 4-digit Master Reset Code to reset your app password:',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: resetController,
+                    keyboardType: TextInputType.number,
+                    maxLength: 4,
+                    obscureText: true,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      letterSpacing: 8,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                    decoration: InputDecoration(
+                      hintText: '••••',
+                      errorText: dialogError,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      counterText: '',
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final enteredCode = resetController.text.trim();
+                    final auth = Provider.of<AuthProvider>(context, listen: false);
+
+                    if (auth.verifyMasterCode(enteredCode)) {
+                      Navigator.of(ctx).pop();
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const PinLockScreen(mode: PinScreenMode.setup),
+                        ),
+                      );
+                    } else {
+                      setDialogState(() {
+                        dialogError = 'Invalid Master Code (9876)';
+                      });
+                    }
+                  },
+                  child: const Text('Verify & Reset'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -325,6 +415,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 20),
 
+          // Security & Passcode Section
+          _buildSectionHeader('Security & Passcode'),
+          Card(
+            elevation: 0.5,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Colors.grey.shade200),
+            ),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.shield_outlined, color: Color(0xFF1E3A8A)),
+                  title: const Text('App Access Password'),
+                  subtitle: const Text('Secured with 4-digit PIN lock'),
+                  trailing: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green.shade300),
+                    ),
+                    child: Text(
+                      'ACTIVE',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.password, color: Color(0xFF3B82F6)),
+                  title: const Text('Change Password'),
+                  subtitle: const Text('Update your 4-digit access PIN'),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                  onTap: _openChangePassword,
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.lock_reset, color: Colors.orange),
+                  title: const Text('Reset Password'),
+                  subtitle: const Text('Reset using Master Code: 9876'),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                  onTap: _openResetPasswordDialog,
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
           // Data Management Section
           _buildSectionHeader('Data Management'),
           Card(
@@ -368,7 +511,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 20),
 
           // About Section
-          _buildSectionHeader('About Call Logger'),
+          _buildSectionHeader('About Android Services'),
           Card(
             elevation: 0.5,
             shape: RoundedRectangleBorder(
@@ -381,12 +524,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Call Logger v1.0.0 (Android Only)',
+                    'Android Services v1.0.0 (Android Only)',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Stores caller and receiver numbers in local SQLite database (sqflite).\n'
+                    'Monitors call activities, manages voice recording backups, and provides PIN protected access.\n'
                     'Includes BroadcastReceiver for android.intent.action.PHONE_STATE, BOOT_COMPLETED auto-restart, and system call log reconciliation.',
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade600, height: 1.4),
                   ),

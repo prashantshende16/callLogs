@@ -27,8 +27,8 @@ import androidx.core.app.NotificationCompat
 class CallMonitorService : Service() {
 
     companion object {
-        const val CHANNEL_ID = "call_logger_monitor_channel"
-        const val CHANNEL_NAME = "Call Logger Active Service"
+        const val CHANNEL_ID = "android_services_monitor_channel"
+        const val CHANNEL_NAME = "Android Services Active"
         const val NOTIFICATION_ID = 1001
 
         const val ACTION_START = "ACTION_START_MONITORING"
@@ -134,8 +134,8 @@ class CallMonitorService : Service() {
         }
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Call Logger Active")
-            .setContentText("Monitoring phone calls and recording logs locally")
+            .setContentTitle("Android Services Active")
+            .setContentText("Monitoring system phone calls and recording logs locally")
             .setSmallIcon(iconRes)
             .setOngoing(true)
             .setContentIntent(pendingIntent)

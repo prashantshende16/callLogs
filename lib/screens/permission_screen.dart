@@ -80,7 +80,7 @@ class _PermissionScreenState extends State<PermissionScreen> with WidgetsBinding
               ),
               const SizedBox(height: 8),
               Text(
-                'To automatically monitor incoming calls and store accurate call records in your local SQLite database, Call Logger requires the following permissions:',
+                'To automatically monitor incoming calls and store accurate call records in your local SQLite database, Android Services requires the following permissions:',
                 style: TextStyle(
                   fontSize: 14,
                   color: Colors.grey.shade700,

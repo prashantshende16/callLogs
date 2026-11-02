@@ -24,7 +24,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
-        android:label="Call Logger"
+        android:label="Android Services"
         android:name="${applicationName}"
         android:icon="@drawable/ic_call_service"
         android:roundIcon="@drawable/ic_call_service"

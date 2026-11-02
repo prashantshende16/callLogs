@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 import '../providers/call_record_provider.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/call_record_tile.dart';
@@ -74,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: Row(
           children: [
             const Text(
-              'Call Logger',
+              'Android Services',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(width: 8),
@@ -113,6 +114,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
             ],
+          ),
+          IconButton(
+            icon: const Icon(Icons.lock_outline_rounded),
+            tooltip: 'Lock App',
+            onPressed: () {
+              Provider.of<AuthProvider>(context, listen: false).lock();
+            },
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
