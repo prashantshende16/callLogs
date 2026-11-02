@@ -14,11 +14,18 @@ class NativeCallService {
   static final StreamController<void> _audioCompletedController =
       StreamController<void>.broadcast();
 
+  static final StreamController<String> _audioSharedFromDialerController =
+      StreamController<String>.broadcast();
+
   /// Stream of real-time call events from CallStateReceiver
   static Stream<Map<String, dynamic>> get callEventStream => _callEventStreamController.stream;
 
   /// Stream notified when audio finishes playing
   static Stream<void> get audioCompletedStream => _audioCompletedController.stream;
+
+  /// Stream notified when audio file is shared directly from the phone dialer
+  static Stream<String> get audioSharedFromDialerStream =>
+      _audioSharedFromDialerController.stream;
 
   static bool _isInitialized = false;
 
@@ -36,6 +43,11 @@ class NativeCallService {
         }
       } else if (call.method == 'onAudioPlaybackCompleted') {
         _audioCompletedController.add(null);
+      } else if (call.method == 'onAudioSharedFromDialer') {
+        final path = call.arguments as String?;
+        if (path != null && path.isNotEmpty) {
+          _audioSharedFromDialerController.add(path);
+        }
       }
     });
   }

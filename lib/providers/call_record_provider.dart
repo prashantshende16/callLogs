@@ -16,6 +16,7 @@ class CallRecordProvider with ChangeNotifier {
   DateTime? _endDate;
 
   StreamSubscription<Map<String, dynamic>>? _nativeEventSub;
+  StreamSubscription<String>? _dialerSharedSub;
 
   List<CallRecord> get records => _records;
   bool get isLoading => _isLoading;
@@ -90,6 +91,18 @@ class CallRecordProvider with ChangeNotifier {
           }
           await loadRecords();
         }
+      }
+    });
+
+    // Listen to audio shared directly from phone dialer (e.g. Google Phone dialer share button)
+    _dialerSharedSub?.cancel();
+    _dialerSharedSub = NativeCallService.audioSharedFromDialerStream.listen((audioPath) async {
+      if (kDebugMode) {
+        print('Audio shared from dialer received in Provider: $audioPath');
+      }
+      if (audioPath.isNotEmpty) {
+        await DatabaseHelper.instance.updateLatestCallAudioPath(audioPath);
+        await loadRecords();
       }
     });
   }
@@ -201,6 +214,7 @@ class CallRecordProvider with ChangeNotifier {
   @override
   void dispose() {
     _nativeEventSub?.cancel();
+    _dialerSharedSub?.cancel();
     super.dispose();
   }
 }

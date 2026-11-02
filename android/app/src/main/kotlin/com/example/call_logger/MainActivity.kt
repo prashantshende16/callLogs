@@ -175,6 +175,49 @@ class MainActivity : FlutterActivity() {
                 methodChannel?.invokeMethod("onCallEvent", eventData)
             }
         }
+
+        // Process any audio shared directly from phone dialer
+        handleSendIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleSendIntent(intent)
+    }
+
+    private fun handleSendIntent(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("audio/") == true) {
+            val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+            } ?: intent.data
+
+            if (uri != null) {
+                try {
+                    val appRecordingsDir = java.io.File(getExternalFilesDir(null), "recordings").apply {
+                        if (!exists()) mkdirs()
+                    }
+                    val fileName = "dialer_shared_${System.currentTimeMillis()}.wav"
+                    val destFile = java.io.File(appRecordingsDir, fileName)
+
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        java.io.FileOutputStream(destFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+
+                    runOnUiThread {
+                        methodChannel?.invokeMethod("onAudioSharedFromDialer", destFile.absolutePath)
+                    }
+                    Log.d("MainActivity", "Successfully saved shared audio from dialer: ${destFile.absolutePath}")
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Error receiving shared audio from dialer: ${e.message}", e)
+                }
+            }
+        }
     }
 
     private fun startCallMonitorService(): Boolean {
