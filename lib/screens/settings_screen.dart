@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/call_record_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/export_service.dart';
+import '../services/native_call_service.dart';
 
 /// SettingsScreen provides configuration for:
 /// - Monitoring toggle (starts/stops native foreground service)
