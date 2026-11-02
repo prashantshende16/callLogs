@@ -199,5 +199,35 @@ class NativeCallService {
       return null;
     }
   }
+
+  /// Checks if All Files Access (MANAGE_EXTERNAL_STORAGE) is granted on Android 11+
+  static Future<bool> checkAllFilesAccess() async {
+    try {
+      final bool? result = await _channel.invokeMethod<bool>('checkAllFilesAccess');
+      return result ?? true;
+    } on PlatformException catch (_) {
+      return true;
+    }
+  }
+
+  /// Opens the system All Files Access settings page for this app
+  static Future<bool> openAllFilesAccessSettings() async {
+    try {
+      final bool? result = await _channel.invokeMethod<bool>('openAllFilesAccessSettings');
+      return result ?? false;
+    } on PlatformException catch (_) {
+      return false;
+    }
+  }
+
+  /// Opens the system Android file picker to allow selecting any .wav, .mp3, or .m4a file
+  static Future<String?> pickAudioWithSystemPicker() async {
+    try {
+      final String? path = await _channel.invokeMethod<String>('pickAudioWithSystemPicker');
+      return path;
+    } on PlatformException catch (_) {
+      return null;
+    }
+  }
 }
 

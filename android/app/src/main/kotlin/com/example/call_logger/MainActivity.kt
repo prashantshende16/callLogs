@@ -117,6 +117,52 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
+                "checkAllFilesAccess" -> {
+                    val hasAccess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        android.os.Environment.isExternalStorageManager()
+                    } else {
+                        true
+                    }
+                    result.success(hasAccess)
+                }
+
+                "openAllFilesAccessSettings" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        try {
+                            val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                data = android.net.Uri.parse("package:$packageName")
+                            }
+                            startActivity(intent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            try {
+                                val intent = Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                                startActivity(intent)
+                                result.success(true)
+                            } catch (_: Exception) {
+                                result.success(false)
+                            }
+                        }
+                    } else {
+                        result.success(true)
+                    }
+                }
+
+                "pickAudioWithSystemPicker" -> {
+                    pendingPickerResult = result
+                    try {
+                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "*/*"
+                            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("audio/*", "application/ogg", "audio/x-wav", "audio/wav"))
+                        }
+                        startActivityForResult(intent, REQUEST_CODE_PICK_AUDIO)
+                    } catch (e: Exception) {
+                        pendingPickerResult = null
+                        result.error("PICKER_ERROR", e.message, null)
+                    }
+                }
+
                 else -> {
                     result.notImplemented()
                 }
@@ -288,6 +334,38 @@ class MainActivity : FlutterActivity() {
             durationStr?.toIntOrNull() ?: 0
         } catch (e: Exception) {
             0
+        }
+    }
+
+    private val REQUEST_CODE_PICK_AUDIO = 2001
+    private var pendingPickerResult: io.flutter.plugin.common.MethodChannel.Result? = null
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_CODE_PICK_AUDIO) {
+            val uri = data?.data
+            if (resultCode == RESULT_OK && uri != null) {
+                try {
+                    val appRecordingsDir = java.io.File(getExternalFilesDir(null), "recordings").apply {
+                        if (!exists()) mkdirs()
+                    }
+                    val fileName = "picked_${System.currentTimeMillis()}.wav"
+                    val destFile = java.io.File(appRecordingsDir, fileName)
+
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        java.io.FileOutputStream(destFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    pendingPickerResult?.success(destFile.absolutePath)
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Error copying picked audio: ${e.message}", e)
+                    pendingPickerResult?.success(null)
+                }
+            } else {
+                pendingPickerResult?.success(null)
+            }
+            pendingPickerResult = null
         }
     }
 

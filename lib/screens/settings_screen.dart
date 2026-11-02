@@ -234,7 +234,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ListTile(
                   leading: const Icon(Icons.audio_file_outlined, color: Colors.purple),
                   title: const Text('Scan & Backup Native Audio Files'),
-                  subtitle: const Text('Finds device recordings and copies them into app backup'),
+                  subtitle: const Text('Finds device recordings (.wav, .m4a, .mp3) and copies them into app backup'),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 14),
                   onTap: () async {
                     final linked = await recordProvider.scanAndLinkNativeRecordings();
@@ -243,6 +243,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         SnackBar(content: Text('Backed up and linked $linked native recording files')),
                       );
                     }
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.folder_shared_outlined, color: Colors.indigo),
+                  title: const Text('All Files Access Permission'),
+                  subtitle: const Text('Grant in phone settings if .wav files are in protected folders'),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                  onTap: () async {
+                    await NativeCallService.openAllFilesAccessSettings();
                   },
                 ),
               ],

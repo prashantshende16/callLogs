@@ -131,7 +131,22 @@ class _CallDetailScreenState extends State<CallDetailScreen> {
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No native recording auto-detected. Tap "Select Recording File" to choose manually.')),
+          const SnackBar(content: Text('No file auto-matched. Tap "Browse Device" to pick your .wav file!')),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickWithSystemFileManager() async {
+    final pickedPath = await NativeCallService.pickAudioWithSystemPicker();
+    if (pickedPath != null && widget.record.id != null) {
+      await DatabaseHelper.instance.updateAudioPath(widget.record.id!, pickedPath);
+      if (mounted) {
+        Provider.of<CallRecordProvider>(context, listen: false).loadRecords();
+        setState(() {});
+        _initAudio();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Successfully linked audio recording!')),
         );
       }
     }
@@ -464,13 +479,22 @@ class _CallDetailScreenState extends State<CallDetailScreen> {
               ),
               const SizedBox(height: 16),
             ] else ...[
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.sync, size: 16),
+                  label: const Text('Auto-Detect Recording (.wav / .m4a / .mp3)'),
+                  onPressed: _searchForNativeRecording,
+                ),
+              ),
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      icon: const Icon(Icons.sync, size: 16),
-                      label: const Text('Auto-Detect', style: TextStyle(fontSize: 13)),
-                      onPressed: _searchForNativeRecording,
+                      icon: const Icon(Icons.list, size: 16),
+                      label: const Text('Scanned Files', style: TextStyle(fontSize: 13)),
+                      onPressed: _pickFromDeviceRecordings,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -478,8 +502,8 @@ class _CallDetailScreenState extends State<CallDetailScreen> {
                     child: FilledButton.icon(
                       style: FilledButton.styleFrom(backgroundColor: Colors.purple.shade700),
                       icon: const Icon(Icons.folder_open, size: 16),
-                      label: const Text('Select File', style: TextStyle(fontSize: 13)),
-                      onPressed: _pickFromDeviceRecordings,
+                      label: const Text('Browse Device', style: TextStyle(fontSize: 13)),
+                      onPressed: _pickWithSystemFileManager,
                     ),
                   ),
                 ],
