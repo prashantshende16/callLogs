@@ -8,6 +8,7 @@ class PermissionService {
     Permission.phone, // READ_PHONE_STATE, CALL_PHONE
     Permission.notification, // POST_NOTIFICATIONS (Android 13+)
     Permission.microphone, // RECORD_AUDIO for voice call recording
+    Permission.manageExternalStorage, // All files access to read/copy Vivo & Realme recordings
   ];
 
   /// Checks if all crucial permissions are currently granted.
@@ -25,6 +26,7 @@ class PermissionService {
       Permission.phone: await Permission.phone.status,
       Permission.notification: await Permission.notification.status,
       Permission.microphone: await Permission.microphone.status,
+      Permission.manageExternalStorage: await Permission.manageExternalStorage.status,
     };
   }
 
@@ -34,6 +36,7 @@ class PermissionService {
       Permission.phone,
       Permission.notification,
       Permission.microphone,
+      Permission.manageExternalStorage,
     ];
     return await permissions.request();
   }

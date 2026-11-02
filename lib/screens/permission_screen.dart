@@ -121,6 +121,13 @@ class _PermissionScreenState extends State<PermissionScreen> with WidgetsBinding
                           'Records call audio directly when a call is connected so you can listen back to conversations.',
                       isGranted: permProvider.areAllGranted,
                     ),
+                    _buildPermissionItem(
+                      icon: Icons.folder_copy_outlined,
+                      title: 'Storage / Recording Backup Access',
+                      description:
+                          'Enables copying native Vivo and Realme call recordings into the app storage for safe backup.',
+                      isGranted: permProvider.areAllGranted,
+                    ),
                   ],
                 ),
               ),

@@ -125,13 +125,13 @@ class _CallDetailScreenState extends State<CallDetailScreen> {
         setState(() {});
         _initAudio();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Found and linked Samsung call recording!')),
+          const SnackBar(content: Text('Found, copied, and linked device call recording!')),
         );
       }
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No native recording found in /Recordings/Call/ for this call')),
+          const SnackBar(content: Text('No native recording found in Vivo/Realme/Samsung folders for this call')),
         );
       }
     }
@@ -364,7 +364,7 @@ class _CallDetailScreenState extends State<CallDetailScreen> {
             ] else ...[
               OutlinedButton.icon(
                 icon: const Icon(Icons.sync, size: 18),
-                label: const Text('Check for Samsung 3-Dot Recording'),
+                label: const Text('Check for Vivo / Realme / Samsung Recording'),
                 onPressed: _searchForNativeRecording,
               ),
               const SizedBox(height: 16),

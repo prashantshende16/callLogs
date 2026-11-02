@@ -199,8 +199,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 20),
 
-          // Samsung / Native Dialer Call Recording (3-dots option)
-          _buildSectionHeader('Samsung Native 3-Dot Recording (Option 1)'),
+          // Vivo / Realme / Samsung Native Call Recording
+          _buildSectionHeader('Native Call Recording Backup (Vivo, Realme, Samsung)'),
           Card(
             elevation: 0.5,
             shape: RoundedRectangleBorder(
@@ -216,16 +216,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Samsung Native Hardware Recorder',
+                        'Automatic Voice Recording Backup',
                         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        '1. Open Samsung Phone App\n'
-                        '2. Tap 3-dots (top right) → Settings\n'
-                        '3. Tap "Record calls" → Enable "Auto record calls"\n\n'
-                        '• Samsung records 2-way audio into /Recordings/Call/.\n'
-                        '• Call Logger automatically makes an independent backup copy in app storage so if you delete the original file, your backup is preserved!',
+                        '• Vivo: Auto-records calls into /Record/Call/.\n'
+                        '• Realme: Records when tapping 3-dots/Record button, saved into /Recordings/Call Recordings/.\n'
+                        '• Samsung: Records into /Recordings/Call/.\n\n'
+                        'When any call ends, Call Logger immediately finds the newly created recording file, makes an independent backup copy into our app storage, and links it to the call record.',
                         style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700, height: 1.4),
                       ),
                     ],
@@ -234,14 +233,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.audio_file_outlined, color: Colors.purple),
-                  title: const Text('Scan & Link Native Audio Files'),
-                  subtitle: const Text('Matches /Recordings/Call/ files with logged calls'),
+                  title: const Text('Scan & Backup Native Audio Files'),
+                  subtitle: const Text('Finds device recordings and copies them into app backup'),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 14),
                   onTap: () async {
                     final linked = await recordProvider.scanAndLinkNativeRecordings();
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Linked $linked native recording audio files')),
+                        SnackBar(content: Text('Backed up and linked $linked native recording files')),
                       );
                     }
                   },

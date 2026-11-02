@@ -181,19 +181,10 @@ class CallStateReceiver : BroadcastReceiver() {
                 Handler(Looper.getMainLooper()).postDelayed({
                     val delayedSyncEvent = mapOf("event" to "sync_latest_call_log")
                     notifyFlutter(delayedSyncEvent)
+                }, 1500)
 
-                    // Also check if Samsung/OEM dialer saved a native high-quality call recording
-                    val nativePath = NativeAudioScanner.findRecordingForCall(context, callSavedNumber, callStart, endTime)
-                    if (nativePath != null) {
-                        val nativeAudioEvent = mapOf(
-                            "event" to "native_recording_found",
-                            "number" to callSavedNumber,
-                            "startTime" to callStart,
-                            "audioPath" to nativePath
-                        )
-                        notifyFlutter(nativeAudioEvent)
-                    }
-                }, 2000)
+                // Schedule scans for Vivo / Realme / Samsung recording files
+                scheduleNativeRecordingScan(context, callSavedNumber, callStart, endTime)
 
                 // Reset state
                 isIncoming = false
@@ -203,6 +194,35 @@ class CallStateReceiver : BroadcastReceiver() {
         }
 
         lastState = state
+    }
+
+    private fun scheduleNativeRecordingScan(
+        context: Context,
+        number: String,
+        startTime: Long,
+        endTime: Long
+    ) {
+        val attempts = listOf(1500L, 3500L, 6500L)
+        var found = false
+
+        for (delay in attempts) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (!found) {
+                    val nativePath = NativeAudioScanner.findRecordingForCall(context, number, startTime, endTime)
+                    if (nativePath != null) {
+                        found = true
+                        Log.d(TAG, "Native recording discovered and backed up at delay $delay ms -> $nativePath")
+                        val nativeAudioEvent = mapOf(
+                            "event" to "native_recording_found",
+                            "number" to number,
+                            "startTime" to startTime,
+                            "audioPath" to nativePath
+                        )
+                        notifyFlutter(nativeAudioEvent)
+                    }
+                }
+            }, delay)
+        }
     }
 
     private fun notifyFlutter(data: Map<String, Any?>) {
