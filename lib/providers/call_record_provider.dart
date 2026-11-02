@@ -78,8 +78,44 @@ class CallRecordProvider with ChangeNotifier {
         // Delayed sync to fetch exact duration and system metadata from CallLog
         await CallLogService.syncLatestCall(fallbackReceiverNumber: receiverNumber);
         await loadRecords();
+      } else if (eventType == 'native_recording_found') {
+        final callerNumber = (event['number'] as String?) ?? '';
+        final startTime = (event['startTime'] as int?) ?? 0;
+        final audioPath = event['audioPath'] as String?;
+
+        if (audioPath != null && audioPath.isNotEmpty) {
+          await DatabaseHelper.instance.updateAudioPathByNumber(callerNumber, startTime, audioPath);
+          await loadRecords();
+        }
       }
     });
+  }
+
+  /// Scans Samsung/OEM native call recording directories and links matching audio files to records
+  Future<int> scanAndLinkNativeRecordings() async {
+    int linkedCount = 0;
+    try {
+      final unlinked = _records.where((r) => r.audioPath == null || r.audioPath!.isEmpty).toList();
+      for (final rec in unlinked) {
+        final path = await NativeCallService.findNativeRecordingForCall(
+          number: rec.callerNumber,
+          startTime: rec.startTime,
+          endTime: rec.endTime,
+        );
+        if (path != null && rec.id != null) {
+          await DatabaseHelper.instance.updateAudioPath(rec.id!, path);
+          linkedCount++;
+        }
+      }
+      if (linkedCount > 0) {
+        await loadRecords();
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error scanning native recordings: $e');
+      }
+    }
+    return linkedCount;
   }
 
   /// Loads records from SQLite with active query and filter criteria

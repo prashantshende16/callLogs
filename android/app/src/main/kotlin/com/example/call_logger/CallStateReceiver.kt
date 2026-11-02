@@ -171,6 +171,9 @@ class CallStateReceiver : BroadcastReceiver() {
                     "audioPath" to audioPath
                 )
 
+                val callSavedNumber = savedNumber ?: "Unknown"
+                val callStart = callStartTime
+
                 // Dispatch notification to Flutter. We also schedule a delayed call log query (1.5s)
                 // because Android OS takes 1-2 seconds after IDLE to flush the finalized CallLog entry to disk.
                 notifyFlutter(event)
@@ -178,7 +181,19 @@ class CallStateReceiver : BroadcastReceiver() {
                 Handler(Looper.getMainLooper()).postDelayed({
                     val delayedSyncEvent = mapOf("event" to "sync_latest_call_log")
                     notifyFlutter(delayedSyncEvent)
-                }, 1500)
+
+                    // Also check if Samsung/OEM dialer saved a native high-quality call recording
+                    val nativePath = NativeAudioScanner.findRecordingForCall(context, callSavedNumber, callStart, endTime)
+                    if (nativePath != null) {
+                        val nativeAudioEvent = mapOf(
+                            "event" to "native_recording_found",
+                            "number" to callSavedNumber,
+                            "startTime" to callStart,
+                            "audioPath" to nativePath
+                        )
+                        notifyFlutter(nativeAudioEvent)
+                    }
+                }, 2000)
 
                 // Reset state
                 isIncoming = false

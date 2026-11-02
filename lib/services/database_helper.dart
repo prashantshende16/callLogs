@@ -224,6 +224,28 @@ class DatabaseHelper {
     return await db.delete(tableCallRecords);
   }
 
+  /// Updates the audio recording file path for a specific call record ID
+  Future<int> updateAudioPath(int id, String path) async {
+    final db = await database;
+    return await db.update(
+      tableCallRecords,
+      {colAudioPath: path},
+      where: '$colId = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Updates audio path matching a caller number and timestamp
+  Future<int> updateAudioPathByNumber(String number, int startTime, String path) async {
+    final db = await database;
+    return await db.update(
+      tableCallRecords,
+      {colAudioPath: path},
+      where: '$colCallerNumber = ? AND ABS($colStartTime - ?) < 30000',
+      whereArgs: [number, startTime],
+    );
+  }
+
   /// Check if a record already exists with the given caller number and start time
   Future<bool> exists(String callerNumber, int startTime) async {
     final db = await database;

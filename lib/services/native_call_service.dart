@@ -149,5 +149,39 @@ class NativeCallService {
       return 0;
     }
   }
+
+  /// Searches for a native Samsung/OEM phone call recording matching a specific call record
+  static Future<String?> findNativeRecordingForCall({
+    required String number,
+    required int startTime,
+    required int endTime,
+  }) async {
+    try {
+      final String? path = await _channel.invokeMethod<String>(
+        'findNativeRecordingForCall',
+        {
+          'number': number,
+          'startTime': startTime,
+          'endTime': endTime,
+        },
+      );
+      return path;
+    } on PlatformException catch (_) {
+      return null;
+    }
+  }
+
+  /// Scans all native Samsung/OEM call recordings available in storage
+  static Future<List<Map<String, dynamic>>> scanAllNativeRecordings() async {
+    try {
+      final List<dynamic>? list = await _channel.invokeMethod<List<dynamic>>('scanAllNativeRecordings');
+      if (list != null) {
+        return list.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+      }
+      return [];
+    } on PlatformException catch (_) {
+      return [];
+    }
+  }
 }
 

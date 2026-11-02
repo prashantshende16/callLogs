@@ -111,6 +111,31 @@ class _CallDetailScreenState extends State<CallDetailScreen> {
     }
   }
 
+  Future<void> _searchForNativeRecording() async {
+    final path = await NativeCallService.findNativeRecordingForCall(
+      number: widget.record.callerNumber,
+      startTime: widget.record.startTime,
+      endTime: widget.record.endTime,
+    );
+    if (path != null && widget.record.id != null) {
+      await DatabaseHelper.instance.updateAudioPath(widget.record.id!, path);
+      if (mounted) {
+        Provider.of<CallRecordProvider>(context, listen: false).loadRecords();
+        setState(() {});
+        _initAudio();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Found and linked Samsung call recording!')),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No native recording found in /Recordings/Call/ for this call')),
+        );
+      }
+    }
+  }
+
   @override
   void dispose() {
     _playbackTimer?.cancel();
@@ -333,6 +358,13 @@ class _CallDetailScreenState extends State<CallDetailScreen> {
                     ],
                   ),
                 ),
+              ),
+              const SizedBox(height: 16),
+            ] else ...[
+              OutlinedButton.icon(
+                icon: const Icon(Icons.sync, size: 18),
+                label: const Text('Check for Samsung 3-Dot Recording'),
+                onPressed: _searchForNativeRecording,
               ),
               const SizedBox(height: 16),
             ],

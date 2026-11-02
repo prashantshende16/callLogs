@@ -199,6 +199,58 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 20),
 
+          // Samsung / Native Dialer Call Recording (3-dots option)
+          _buildSectionHeader('Samsung Native 3-Dot Recording (Option 1)'),
+          Card(
+            elevation: 0.5,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Colors.grey.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Samsung Native Hardware Recorder',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '1. Open Samsung Phone App\n'
+                        '2. Tap 3-dots (top right) → Settings\n'
+                        '3. Tap "Record calls" → Enable "Auto record calls"\n\n'
+                        'Samsung records 2-way audio directly into /Recordings/Call/. Call Logger will automatically link these files to your SQLite call records!',
+                        style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700, height: 1.4),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.audio_file_outlined, color: Colors.purple),
+                  title: const Text('Scan & Link Native Audio Files'),
+                  subtitle: const Text('Matches /Recordings/Call/ files with logged calls'),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                  onTap: () async {
+                    final linked = await recordProvider.scanAndLinkNativeRecordings();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Linked $linked native recording audio files')),
+                      );
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
           // Receiver Number Configuration
           _buildSectionHeader('Device (Receiver) Phone Number'),
           Card(

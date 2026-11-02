@@ -93,6 +93,19 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
+                "findNativeRecordingForCall" -> {
+                    val number = call.argument<String>("number") ?: ""
+                    val startTime = (call.argument<Number>("startTime"))?.toLong() ?: 0L
+                    val endTime = (call.argument<Number>("endTime"))?.toLong() ?: 0L
+                    val path = NativeAudioScanner.findRecordingForCall(this, number, startTime, endTime)
+                    result.success(path)
+                }
+
+                "scanAllNativeRecordings" -> {
+                    val recordings = NativeAudioScanner.scanAllNativeRecordings()
+                    result.success(recordings)
+                }
+
                 else -> {
                     result.notImplemented()
                 }
