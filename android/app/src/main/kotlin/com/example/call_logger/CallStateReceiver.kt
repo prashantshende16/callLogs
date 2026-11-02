@@ -108,8 +108,12 @@ class CallStateReceiver : BroadcastReceiver() {
 
             TelephonyManager.CALL_STATE_OFFHOOK -> {
                 // Call connected (either incoming answered or outgoing connected)
-                // Start automatic voice call recording
-                CallAudioRecorder.startRecording(context, savedNumber ?: "Unknown")
+                // Only start in-app mic recording if user explicitly enabled it
+                val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                val inAppMicEnabled = prefs.getBoolean("flutter.enable_in_app_mic_recording", false)
+                if (inAppMicEnabled) {
+                    CallAudioRecorder.startRecording(context, savedNumber ?: "Unknown")
+                }
 
                 if (lastState == TelephonyManager.CALL_STATE_RINGING) {
                     // Incoming call was answered
@@ -138,7 +142,7 @@ class CallStateReceiver : BroadcastReceiver() {
             }
 
             TelephonyManager.CALL_STATE_IDLE -> {
-                // Call ended -> Stop voice recording
+                // Call ended -> Stop in-app mic recording if it was running
                 val audioPath = CallAudioRecorder.stopRecording(context)
 
                 val endTime = System.currentTimeMillis()

@@ -84,7 +84,10 @@ class CallRecordProvider with ChangeNotifier {
         final audioPath = event['audioPath'] as String?;
 
         if (audioPath != null && audioPath.isNotEmpty) {
-          await DatabaseHelper.instance.updateAudioPathByNumber(callerNumber, startTime, audioPath);
+          final updated = await DatabaseHelper.instance.updateAudioPathByNumber(callerNumber, startTime, audioPath);
+          if (updated == 0) {
+            await DatabaseHelper.instance.updateLatestCallAudioPath(audioPath);
+          }
           await loadRecords();
         }
       }

@@ -131,10 +131,95 @@ class _CallDetailScreenState extends State<CallDetailScreen> {
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No native recording found in Vivo/Realme/Samsung folders for this call')),
+          const SnackBar(content: Text('No native recording auto-detected. Tap "Select Recording File" to choose manually.')),
         );
       }
     }
+  }
+
+  Future<void> _pickFromDeviceRecordings() async {
+    final list = await NativeCallService.scanAllNativeRecordings();
+    if (!mounted) return;
+
+    if (list.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No recording files found in standard folders (/Record/Call, /Music/Recordings/...)')),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Container(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.7,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Select Call Recording File',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Found ${list.length} native recordings on your device. Tap one to back up and link to this call:',
+                style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
+              ),
+              const Divider(height: 20),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: list.length,
+                  itemBuilder: (context, index) {
+                    final item = list[index];
+                    final name = item['name'] as String? ?? 'Recording';
+                    final path = item['path'] as String? ?? '';
+                    final size = item['size'] as int? ?? 0;
+                    final sizeKb = (size / 1024).round();
+                    final modTime = item['lastModified'] as int? ?? 0;
+                    final dateStr = modTime > 0
+                        ? DateFormat('MMM dd, yyyy  hh:mm a').format(DateTime.fromMillisecondsSinceEpoch(modTime))
+                        : '';
+
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.purple.shade50,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.mic, color: Colors.purple.shade700, size: 20),
+                      ),
+                      title: Text(name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                      subtitle: Text('$dateStr  •  ${sizeKb}KB', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                      trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                      onTap: () async {
+                        Navigator.of(ctx).pop();
+                        if (widget.record.id != null) {
+                          await DatabaseHelper.instance.updateAudioPath(widget.record.id!, path);
+                          if (mounted) {
+                            Provider.of<CallRecordProvider>(context, listen: false).loadRecords();
+                            setState(() {});
+                            _initAudio();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Linked $name to this call!')),
+                            );
+                          }
+                        }
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -362,10 +447,25 @@ class _CallDetailScreenState extends State<CallDetailScreen> {
               ),
               const SizedBox(height: 16),
             ] else ...[
-              OutlinedButton.icon(
-                icon: const Icon(Icons.sync, size: 18),
-                label: const Text('Check for Vivo / Realme / Samsung Recording'),
-                onPressed: _searchForNativeRecording,
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.sync, size: 16),
+                      label: const Text('Auto-Detect', style: TextStyle(fontSize: 13)),
+                      onPressed: _searchForNativeRecording,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(backgroundColor: Colors.purple.shade700),
+                      icon: const Icon(Icons.folder_open, size: 16),
+                      label: const Text('Select File', style: TextStyle(fontSize: 13)),
+                      onPressed: _pickFromDeviceRecordings,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
             ],

@@ -246,6 +246,16 @@ class DatabaseHelper {
     );
   }
 
+  /// Updates the audio path of the most recently logged call record
+  Future<int> updateLatestCallAudioPath(String path) async {
+    final db = await database;
+    return await db.rawUpdate('''
+      UPDATE $tableCallRecords 
+      SET $colAudioPath = ? 
+      WHERE $colId = (SELECT $colId FROM $tableCallRecords ORDER BY $colStartTime DESC LIMIT 1)
+    ''', [path]);
+  }
+
   /// Check if a record already exists with the given caller number and start time
   Future<bool> exists(String callerNumber, int startTime) async {
     final db = await database;
