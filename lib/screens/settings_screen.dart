@@ -224,7 +224,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         '1. Open Samsung Phone App\n'
                         '2. Tap 3-dots (top right) → Settings\n'
                         '3. Tap "Record calls" → Enable "Auto record calls"\n\n'
-                        'Samsung records 2-way audio directly into /Recordings/Call/. Call Logger will automatically link these files to your SQLite call records!',
+                        '• Samsung records 2-way audio into /Recordings/Call/.\n'
+                        '• Call Logger automatically makes an independent backup copy in app storage so if you delete the original file, your backup is preserved!',
                         style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700, height: 1.4),
                       ),
                     ],

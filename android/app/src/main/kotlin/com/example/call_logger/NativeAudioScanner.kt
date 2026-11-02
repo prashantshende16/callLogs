@@ -49,17 +49,53 @@ object NativeAudioScanner {
         val directMatch = scanDirectoriesForCall(sanitizedNumber, callStartTimeMs, callEndTimeMs)
         if (directMatch != null) {
             Log.d(TAG, "Found native recording via directory scan: $directMatch")
-            return directMatch
+            return backupToAppStorage(context, directMatch, sanitizedNumber)
         }
 
         // 2. Scan via MediaStore Audio provider
         val mediaStoreMatch = scanMediaStoreForCall(context, sanitizedNumber, callStartTimeMs, callEndTimeMs)
         if (mediaStoreMatch != null) {
             Log.d(TAG, "Found native recording via MediaStore: $mediaStoreMatch")
-            return mediaStoreMatch
+            return backupToAppStorage(context, mediaStoreMatch, sanitizedNumber)
         }
 
         return null
+    }
+
+    /**
+     * Copies the native recording file into our app's private external files directory
+     * (/Android/data/com.example.call_logger/files/recordings/).
+     * This creates a safe backup copy so that even if the user manually deletes the original
+     * recording in Samsung's /Recordings/Call/ directory, our app keeps the audio file preserved!
+     */
+    fun backupToAppStorage(context: Context, sourcePath: String, number: String): String {
+        return try {
+            val sourceFile = File(sourcePath)
+            if (!sourceFile.exists() || sourceFile.length() < 100) {
+                return sourcePath
+            }
+
+            val appRecordingsDir = File(context.getExternalFilesDir(null), "recordings").apply {
+                if (!exists()) mkdirs()
+            }
+
+            val safeNumber = number.replace(Regex("[^0-9+]"), "").ifEmpty { "unknown" }
+            val backupFileName = "backup_${safeNumber}_${sourceFile.name}"
+            val destFile = File(appRecordingsDir, backupFileName)
+
+            // If already backed up with matching size, return destination path
+            if (destFile.exists() && destFile.length() == sourceFile.length()) {
+                Log.d(TAG, "Audio already backed up in app storage: ${destFile.absolutePath}")
+                return destFile.absolutePath
+            }
+
+            sourceFile.copyTo(destFile, overwrite = true)
+            Log.d(TAG, "Successfully created independent backup in app storage: ${destFile.absolutePath}")
+            destFile.absolutePath
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to copy recording to app backup storage: ${e.message}", e)
+            sourcePath // Fallback to original path if copy fails
+        }
     }
 
     private fun scanDirectoriesForCall(
@@ -201,3 +237,4 @@ object NativeAudioScanner {
         return result
     }
 }
+
