@@ -123,6 +123,55 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
     }
 
     /**
+     * Inserts a call record directly into SQLite from the native background receiver.
+     */
+    fun insertCallRecord(
+        callerNumber: String,
+        receiverNumber: String,
+        callType: String,
+        callStatus: String,
+        startTime: Long,
+        endTime: Long,
+        durationSeconds: Int,
+        simSlot: String?,
+        audioPath: String?,
+        callerName: String? = null
+    ): Long {
+        return try {
+            val db = writableDatabase
+            val resolvedName = if (!callerName.isNullOrBlank()) {
+                callerName
+            } else {
+                getContactName(context, callerNumber)
+            }
+
+            val values = ContentValues().apply {
+                put(COL_CALLER_NUMBER, callerNumber)
+                put(COL_CALLER_NAME, resolvedName)
+                put(COL_RECEIVER_NUMBER, receiverNumber)
+                put(COL_CALL_TYPE, callType)
+                put(COL_CALL_STATUS, callStatus)
+                put(COL_START_TIME, startTime)
+                put(COL_END_TIME, endTime)
+                put(COL_DURATION_SECONDS, durationSeconds)
+                put(COL_SIM_SLOT, simSlot)
+                put(COL_AUDIO_PATH, audioPath)
+                put(COL_CREATED_AT, System.currentTimeMillis())
+            }
+
+            db.insertWithOnConflict(
+                TABLE_CALL_RECORDS,
+                null,
+                values,
+                SQLiteDatabase.CONFLICT_IGNORE
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to insert call record native: ${e.message}")
+            -1L
+        }
+    }
+
+    /**
      * Reads recent calls from Android's system CallLog (CallLog.Calls)
      * and copies them directly into local SQLite database (call_records).
      * Automatically resolves contact names and matches/copies audio recordings.

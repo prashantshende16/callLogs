@@ -37,6 +37,12 @@ class CallStateReceiver : BroadcastReceiver() {
 
         // Listener for Flutter MainActivity communication
         var callEventListener: ((Map<String, Any?>) -> Unit)? = null
+
+        fun notifyFlutter(data: Map<String, Any?>) {
+            Handler(Looper.getMainLooper()).post {
+                callEventListener?.invoke(data)
+            }
+        }
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -281,12 +287,6 @@ class CallStateReceiver : BroadcastReceiver() {
                     }
                 }
             }, delay)
-        }
-    }
-
-    private fun notifyFlutter(data: Map<String, Any?>) {
-        Handler(Looper.getMainLooper()).post {
-            callEventListener?.invoke(data)
         }
     }
 
