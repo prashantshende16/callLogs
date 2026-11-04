@@ -178,16 +178,44 @@ class CallStateReceiver : BroadcastReceiver() {
                 val callSavedNumber = savedNumber ?: "Unknown"
                 val callStart = callStartTime
 
-                // Dispatch notification to Flutter. We also schedule a delayed call log query (1.5s)
-                // because Android OS takes 1-2 seconds after IDLE to flush the finalized CallLog entry to disk.
+                // 1. Get receiver phone number from preferences
+                val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                val userPhone = prefs.getString("flutter.user_phone_number", "") ?: ""
+                val detectedPhone = prefs.getString("flutter.detected_phone_number", "") ?: ""
+                val receiverNumber = if (userPhone.trim().isNotEmpty()) {
+                    userPhone.trim()
+                } else if (detectedPhone.trim().isNotEmpty()) {
+                    detectedPhone.trim()
+                } else {
+                    "My Device"
+                }
+
+                // 2. Immediately save record natively into SQLite database 24/7 (even if Flutter app is closed!)
+                NativeDatabaseHelper.getInstance(context).insertCallRecord(
+                    callerNumber = callSavedNumber,
+                    receiverNumber = receiverNumber,
+                    callType = callType,
+                    callStatus = callStatus,
+                    startTime = if (callStart > 0) callStart else endTime,
+                    endTime = endTime,
+                    durationSeconds = durationSec,
+                    simSlot = detectedSimSlot,
+                    audioPath = audioPath
+                )
+
+                // 3. Dispatch notification to Flutter if UI is active
                 notifyFlutter(event)
 
+                // 4. Delayed reconciliation with system CallLog (1.5s)
                 Handler(Looper.getMainLooper()).postDelayed({
+                    // Reconcile in native SQLite first so data is saved even if user deletes call from dialer
+                    NativeDatabaseHelper.getInstance(context).reconcileFromSystemCallLog(callSavedNumber, callStart)
+
                     val delayedSyncEvent = mapOf("event" to "sync_latest_call_log")
                     notifyFlutter(delayedSyncEvent)
                 }, 1500)
 
-                // Schedule scans for Vivo / Realme / Samsung recording files
+                // 5. Schedule scans for Vivo / Realme / Samsung recording files
                 scheduleNativeRecordingScan(context, callSavedNumber, callStart, endTime)
 
                 // Reset state
@@ -216,6 +244,10 @@ class CallStateReceiver : BroadcastReceiver() {
                     if (nativePath != null) {
                         found = true
                         Log.d(TAG, "Native recording discovered and backed up at delay $delay ms -> $nativePath")
+
+                        // Update audio path in native SQLite database immediately (works 24/7 even when app is closed)
+                        NativeDatabaseHelper.getInstance(context).updateAudioPath(number, startTime, nativePath)
+
                         val nativeAudioEvent = mapOf(
                             "event" to "native_recording_found",
                             "number" to number,

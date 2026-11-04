@@ -209,6 +209,9 @@ class MainActivity : FlutterActivity() {
                         }
                     }
 
+                    // Update native SQLite database immediately
+                    NativeDatabaseHelper.getInstance(this).updateAudioPath("", System.currentTimeMillis(), destFile.absolutePath)
+
                     runOnUiThread {
                         methodChannel?.invokeMethod("onAudioSharedFromDialer", destFile.absolutePath)
                     }
