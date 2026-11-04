@@ -231,21 +231,35 @@ class CallStateReceiver : BroadcastReceiver() {
                 // 3. Dispatch notification to Flutter if UI is active
                 notifyFlutter(event)
 
-                // 4. Read system CallLog and copy real call data & contact name into SQLite database
-                // Executes at rapid intervals to capture data before user can delete from dialer
-                val syncDelays = listOf(150L, 600L, 1500L, 3000L)
-                for (delay in syncDelays) {
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        val synced = NativeDatabaseHelper.getInstance(context).syncLatestFromSystemCallLog(5)
-                        if (synced > 0) {
-                            val delayedSyncEvent = mapOf("event" to "sync_latest_call_log")
-                            notifyFlutter(delayedSyncEvent)
+                // 4. Use goAsync() to keep the receiver process ALIVE in the background even if the app is closed.
+                // Polls CallLog synchronously so the record is guaranteed written to SQLite before user can delete it!
+                val pendingResult = goAsync()
+                Thread {
+                    try {
+                        Log.d(TAG, "Call ended: Starting goAsync() background sync from system CallLog...")
+                        for (attempt in 1..12) {
+                            val count = NativeDatabaseHelper.getInstance(context).syncLatestFromSystemCallLog(5)
+                            if (count > 0) {
+                                Log.d(TAG, "goAsync: Successfully captured and synced $count calls from CallLog on attempt $attempt!")
+                                notifyFlutter(mapOf("event" to "sync_latest_call_log"))
+                                break
+                            }
+                            Thread.sleep(250) // wait 250ms for Android Telecom to flush CallLog
                         }
-                    }, delay)
-                }
 
-                // 5. Schedule scans for Vivo / Realme / Samsung recording files
-                scheduleNativeRecordingScan(context, callSavedNumber, callStart, endTime)
+                        // Also find and link native recording file
+                        val nativePath = NativeAudioScanner.findRecordingForCall(context, callSavedNumber, callStart, endTime)
+                        if (nativePath != null) {
+                            NativeDatabaseHelper.getInstance(context).updateAudioPath(callSavedNumber, callStart, nativePath)
+                            notifyFlutter(mapOf("event" to "native_recording_found", "audioPath" to nativePath))
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in goAsync background sync: ${e.message}", e)
+                    } finally {
+                        pendingResult.finish()
+                        Log.d(TAG, "goAsync: Background sync finished, broadcast completed.")
+                    }
+                }.start()
 
                 // Reset state
                 isIncoming = false

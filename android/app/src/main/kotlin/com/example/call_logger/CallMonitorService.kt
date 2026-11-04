@@ -190,6 +190,19 @@ class CallMonitorService : Service() {
             .build()
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        Log.d("CallMonitorService", "onTaskRemoved: App swiped away. Keeping background service alive!")
+        val restartIntent = Intent(applicationContext, CallMonitorService::class.java).apply {
+            action = ACTION_START
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            androidx.core.content.ContextCompat.startForegroundService(applicationContext, restartIntent)
+        } else {
+            startService(restartIntent)
+        }
+    }
+
     override fun onDestroy() {
         stopMonitoring()
         Log.d("CallMonitorService", "onDestroy called")

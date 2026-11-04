@@ -246,8 +246,8 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
                     // 1. Purge any obsolete placeholder 'Unknown' entries matching approximately this time
                     db.delete(
                         TABLE_CALL_RECORDS,
-                        "$COL_CALLER_NUMBER = 'Unknown' AND ABS($COL_START_TIME - ?) < 180000",
-                        arrayOf(logDate.toString())
+                        "$COL_CALLER_NUMBER = 'Unknown'",
+                        null
                     )
 
                     // 2. Check if a record already exists with same number and approximate start time (within 30s)
@@ -276,6 +276,7 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
                             "$COL_CALLER_NUMBER = ? AND ABS($COL_START_TIME - ?) < 30000",
                             arrayOf(logNum, logDate.toString())
                         )
+                        syncedCount++
                     } else {
                         val values = ContentValues().apply {
                             put(COL_CALLER_NUMBER, logNum)
