@@ -142,6 +142,7 @@ class CallRecordProvider with ChangeNotifier {
     notifyListeners();
 
     try {
+      await DatabaseHelper.instance.purgeUnknownPlaceholders();
       _records = await DatabaseHelper.instance.getAll(
         searchQuery: _searchQuery,
         callTypeFilter: _callTypeFilter,

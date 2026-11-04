@@ -230,6 +230,16 @@ class DatabaseHelper {
     return await db.delete(tableCallRecords);
   }
 
+  /// Deletes any orphan or placeholder 'Unknown' records with 0 duration from previous failed broadcasts
+  Future<int> purgeUnknownPlaceholders() async {
+    final db = await database;
+    return await db.delete(
+      tableCallRecords,
+      where: '$colCallerNumber = ?',
+      whereArgs: ['Unknown'],
+    );
+  }
+
   /// Updates the audio recording file path for a specific call record ID
   Future<int> updateAudioPath(int id, String path) async {
     final db = await database;

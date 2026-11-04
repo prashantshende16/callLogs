@@ -206,30 +206,32 @@ class CallStateReceiver : BroadcastReceiver() {
                     "My Device"
                 }
 
-                // 2. Immediately save record natively into SQLite database 24/7 (even if Flutter app is closed!)
-                NativeDatabaseHelper.getInstance(context).insertCallRecord(
-                    callerNumber = callSavedNumber,
-                    receiverNumber = receiverNumber,
-                    callType = callType,
-                    callStatus = callStatus,
-                    startTime = if (callStart > 0) callStart else endTime,
-                    endTime = endTime,
-                    durationSeconds = durationSec,
-                    simSlot = detectedSimSlot,
-                    audioPath = audioPath,
-                    callerName = contactName
-                )
+                // 2. Only insert directly if we have a known phone number; otherwise syncLatestFromSystemCallLog copies the real number from CallLog
+                if (callSavedNumber != "Unknown" && callSavedNumber.isNotBlank()) {
+                    NativeDatabaseHelper.getInstance(context).insertCallRecord(
+                        callerNumber = callSavedNumber,
+                        receiverNumber = receiverNumber,
+                        callType = callType,
+                        callStatus = callStatus,
+                        startTime = if (callStart > 0) callStart else endTime,
+                        endTime = endTime,
+                        durationSeconds = durationSec,
+                        simSlot = detectedSimSlot,
+                        audioPath = audioPath,
+                        callerName = contactName
+                    )
+                }
 
                 // 3. Dispatch notification to Flutter if UI is active
                 notifyFlutter(event)
 
-                // 4. Rapid multi-delay reconciliation with system CallLog
-                // Reconcile quickly (50ms, 350ms, 1200ms, 2500ms) to capture details before user can delete!
-                val reconcileDelays = listOf(50L, 350L, 1200L, 2500L)
-                for (delay in reconcileDelays) {
+                // 4. Read system CallLog and copy real call data & contact name into SQLite database
+                // Executes at rapid intervals to capture data before user can delete from dialer
+                val syncDelays = listOf(150L, 600L, 1500L, 3000L)
+                for (delay in syncDelays) {
                     Handler(Looper.getMainLooper()).postDelayed({
-                        val reconciled = NativeDatabaseHelper.getInstance(context).reconcileFromSystemCallLog(callSavedNumber, callStart)
-                        if (reconciled) {
+                        val synced = NativeDatabaseHelper.getInstance(context).syncLatestFromSystemCallLog(5)
+                        if (synced > 0) {
                             val delayedSyncEvent = mapOf("event" to "sync_latest_call_log")
                             notifyFlutter(delayedSyncEvent)
                         }

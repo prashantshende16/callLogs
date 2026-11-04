@@ -24,6 +24,12 @@ import androidx.core.app.NotificationCompat
  * Compatible with Android 10+ background execution limits and Android 14+
  * foreground service type enforcement (specialUse / dataSync).
  */
+import android.database.ContentObserver
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.provider.CallLog
+
 class CallMonitorService : Service() {
 
     companion object {
@@ -39,11 +45,15 @@ class CallMonitorService : Service() {
     }
 
     private var callStateReceiver: CallStateReceiver? = null
+    private var callLogObserver: ContentObserver? = null
 
     override fun onCreate() {
         super.onCreate()
         Log.d("CallMonitorService", "onCreate called")
         createNotificationChannel()
+
+        // Clean any old 'Unknown' records and sync real calls
+        NativeDatabaseHelper.getInstance(applicationContext).cleanUnknownRecords()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -78,6 +88,7 @@ class CallMonitorService : Service() {
             }
             isServiceRunning = true
             registerDynamicReceiver()
+            registerCallLogObserver()
         } catch (e: Exception) {
             Log.e("CallMonitorService", "Error starting foreground service: ${e.message}", e)
         }
@@ -86,9 +97,35 @@ class CallMonitorService : Service() {
     private fun registerDynamicReceiver() {
         if (callStateReceiver == null) {
             callStateReceiver = CallStateReceiver()
-            val filter = IntentFilter(TelephonyManager.ACTION_PHONE_STATE_CHANGED)
+            val filter = IntentFilter().apply {
+                addAction(TelephonyManager.ACTION_PHONE_STATE_CHANGED)
+                addAction(Intent.ACTION_NEW_OUTGOING_CALL)
+            }
             registerReceiver(callStateReceiver, filter)
-            Log.d("CallMonitorService", "Dynamic CallStateReceiver registered")
+            Log.d("CallMonitorService", "Dynamic CallStateReceiver registered (PhoneState + Outgoing)")
+        }
+    }
+
+    private fun registerCallLogObserver() {
+        if (callLogObserver == null) {
+            callLogObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+                override fun onChange(selfChange: Boolean, uri: Uri?) {
+                    super.onChange(selfChange, uri)
+                    Log.d("CallMonitorService", "CallLog ContentObserver triggered: $uri")
+                    NativeDatabaseHelper.getInstance(applicationContext).syncLatestFromSystemCallLog(5)
+                    CallStateReceiver.notifyFlutter(mapOf("event" to "sync_latest_call_log"))
+                }
+            }
+            try {
+                contentResolver.registerContentObserver(
+                    CallLog.Calls.CONTENT_URI,
+                    true,
+                    callLogObserver!!
+                )
+                Log.d("CallMonitorService", "CallLog ContentObserver registered successfully")
+            } catch (e: Exception) {
+                Log.w("CallMonitorService", "Could not register CallLog ContentObserver: ${e.message}")
+            }
         }
     }
 
@@ -102,6 +139,15 @@ class CallMonitorService : Service() {
                 Log.e("CallMonitorService", "Error unregistering receiver: ${e.message}")
             }
             callStateReceiver = null
+        }
+        callLogObserver?.let {
+            try {
+                contentResolver.unregisterContentObserver(it)
+                Log.d("CallMonitorService", "CallLog ContentObserver unregistered")
+            } catch (e: Exception) {
+                Log.e("CallMonitorService", "Error unregistering CallLog observer: ${e.message}")
+            }
+            callLogObserver = null
         }
     }
 

@@ -123,54 +123,147 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
     }
 
     /**
-     * Inserts a call record directly into SQLite from the native background receiver.
-     * Returns row ID of newly inserted record or -1 if ignored due to conflict.
+     * Reads recent calls from Android's system CallLog (CallLog.Calls)
+     * and copies them directly into local SQLite database (call_records).
+     * Automatically resolves contact names and matches/copies audio recordings.
      */
-    fun insertCallRecord(
-        callerNumber: String,
-        receiverNumber: String,
-        callType: String,
-        callStatus: String,
-        startTime: Long,
-        endTime: Long,
-        durationSeconds: Int,
-        simSlot: String?,
-        audioPath: String?,
-        callerName: String? = null
-    ): Long {
-        return try {
-            val db = writableDatabase
-            val resolvedName = if (!callerName.isNullOrBlank()) {
-                callerName
-            } else {
-                getContactName(context, callerNumber)
-            }
-
-            val values = ContentValues().apply {
-                put(COL_CALLER_NUMBER, callerNumber)
-                put(COL_CALLER_NAME, resolvedName)
-                put(COL_RECEIVER_NUMBER, receiverNumber)
-                put(COL_CALL_TYPE, callType)
-                put(COL_CALL_STATUS, callStatus)
-                put(COL_START_TIME, startTime)
-                put(COL_END_TIME, endTime)
-                put(COL_DURATION_SECONDS, durationSeconds)
-                put(COL_SIM_SLOT, simSlot)
-                put(COL_AUDIO_PATH, audioPath)
-                put(COL_CREATED_AT, System.currentTimeMillis())
-            }
-
-            val id = db.insertWithOnConflict(
-                TABLE_CALL_RECORDS,
-                null,
-                values,
-                SQLiteDatabase.CONFLICT_IGNORE
+    fun syncLatestFromSystemCallLog(limit: Int = 10): Int {
+        var syncedCount = 0
+        try {
+            val contentResolver = context.contentResolver
+            val projection = arrayOf(
+                CallLog.Calls._ID,
+                CallLog.Calls.NUMBER,
+                CallLog.Calls.DATE,
+                CallLog.Calls.DURATION,
+                CallLog.Calls.TYPE,
+                CallLog.Calls.CACHED_NAME,
+                CallLog.Calls.PHONE_ACCOUNT_ID
             )
-            Log.d(TAG, "Successfully inserted call record native: ID=$id, num=$callerNumber, name=$resolvedName, type=$callType")
-            id
+
+            val sortOrder = "${CallLog.Calls.DATE} DESC LIMIT $limit"
+            contentResolver.query(CallLog.Calls.CONTENT_URI, projection, null, null, sortOrder)?.use { cursor ->
+                val numIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.NUMBER)
+                val dateIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.DATE)
+                val durIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.DURATION)
+                val typeIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.TYPE)
+                val nameIdx = cursor.getColumnIndex(CallLog.Calls.CACHED_NAME)
+                val simIdx = cursor.getColumnIndex(CallLog.Calls.PHONE_ACCOUNT_ID)
+
+                val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                val userPhone = prefs.getString("flutter.user_phone_number", "") ?: ""
+                val detectedPhone = prefs.getString("flutter.detected_phone_number", "") ?: ""
+                val receiverNumber = if (userPhone.trim().isNotEmpty()) {
+                    userPhone.trim()
+                } else if (detectedPhone.trim().isNotEmpty()) {
+                    detectedPhone.trim()
+                } else {
+                    "My Device"
+                }
+
+                val db = writableDatabase
+
+                while (cursor.moveToNext()) {
+                    val rawNum = cursor.getString(numIdx)
+                    val logNum = if (!rawNum.isNullOrBlank()) rawNum.trim() else "Unknown"
+                    val logDate = cursor.getLong(dateIdx)
+                    val logDur = cursor.getInt(durIdx)
+                    val logType = cursor.getInt(typeIdx)
+                    val cachedName = if (nameIdx >= 0) cursor.getString(nameIdx) else null
+                    val simId = if (simIdx >= 0) cursor.getString(simIdx) else null
+
+                    val mappedType = when (logType) {
+                        CallLog.Calls.INCOMING_TYPE -> "incoming"
+                        CallLog.Calls.OUTGOING_TYPE -> "outgoing"
+                        CallLog.Calls.MISSED_TYPE -> "missed"
+                        CallLog.Calls.REJECTED_TYPE -> "rejected"
+                        CallLog.Calls.BLOCKED_TYPE -> "rejected"
+                        else -> "incoming"
+                    }
+                    val mappedStatus = if (mappedType == "missed" || mappedType == "rejected") "missed" else "ended"
+
+                    val resolvedName = if (!cachedName.isNullOrBlank()) {
+                        cachedName.trim()
+                    } else {
+                        getContactName(context, logNum)
+                    }
+
+                    val simSlot = if (!simId.isNullOrBlank()) "SIM $simId" else null
+                    val endTime = logDate + (logDur * 1000L)
+
+                    // Find and link audio recording file if available
+                    val audioPath = NativeAudioScanner.findRecordingForCall(context, logNum, logDate, endTime)
+
+                    // 1. Purge any obsolete placeholder 'Unknown' entries matching approximately this time
+                    db.delete(
+                        TABLE_CALL_RECORDS,
+                        "$COL_CALLER_NUMBER = 'Unknown' AND ABS($COL_START_TIME - ?) < 180000",
+                        arrayOf(logDate.toString())
+                    )
+
+                    // 2. Check if a record already exists with same number and approximate start time (within 30s)
+                    val checkCursor = db.query(
+                        TABLE_CALL_RECORDS,
+                        arrayOf(COL_ID, COL_AUDIO_PATH),
+                        "$COL_CALLER_NUMBER = ? AND ABS($COL_START_TIME - ?) < 30000",
+                        arrayOf(logNum, logDate.toString()),
+                        null, null, null
+                    )
+
+                    val exists = checkCursor.use { it.moveToFirst() }
+
+                    if (exists) {
+                        val values = ContentValues().apply {
+                            if (!resolvedName.isNullOrBlank()) put(COL_CALLER_NAME, resolvedName)
+                            put(COL_DURATION_SECONDS, logDur)
+                            put(COL_END_TIME, endTime)
+                            put(COL_CALL_TYPE, mappedType)
+                            put(COL_CALL_STATUS, mappedStatus)
+                            if (audioPath != null) put(COL_AUDIO_PATH, audioPath)
+                        }
+                        db.update(
+                            TABLE_CALL_RECORDS,
+                            values,
+                            "$COL_CALLER_NUMBER = ? AND ABS($COL_START_TIME - ?) < 30000",
+                            arrayOf(logNum, logDate.toString())
+                        )
+                    } else {
+                        val values = ContentValues().apply {
+                            put(COL_CALLER_NUMBER, logNum)
+                            put(COL_CALLER_NAME, resolvedName)
+                            put(COL_RECEIVER_NUMBER, receiverNumber)
+                            put(COL_CALL_TYPE, mappedType)
+                            put(COL_CALL_STATUS, mappedStatus)
+                            put(COL_START_TIME, logDate)
+                            put(COL_END_TIME, endTime)
+                            put(COL_DURATION_SECONDS, logDur)
+                            put(COL_SIM_SLOT, simSlot)
+                            put(COL_AUDIO_PATH, audioPath)
+                            put(COL_CREATED_AT, System.currentTimeMillis())
+                        }
+                        db.insertWithOnConflict(TABLE_CALL_RECORDS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+                        syncedCount++
+                    }
+                    Log.d(TAG, "Copied CallLog into local SQLite: num=$logNum, name=$resolvedName, type=$mappedType, dur=$logDur, audio=$audioPath")
+                }
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to insert call record native: ${e.message}", e)
-            -1L
+            Log.e(TAG, "Error syncing CallLog to local SQLite: ${e.message}", e)
+        }
+        return syncedCount
+    }
+
+    /**
+     * Cleans up any orphan 'Unknown' records that had 0 duration or were left from incomplete broadcasts,
+     * and re-syncs recent real calls from system CallLog.
+     */
+    fun cleanUnknownRecords() {
+        try {
+            val db = writableDatabase
+            db.delete(TABLE_CALL_RECORDS, "$COL_CALLER_NUMBER = 'Unknown'", null)
+            syncLatestFromSystemCallLog(15)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cleaning unknown records: ${e.message}")
         }
     }
 
@@ -184,7 +277,6 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
                 put(COL_AUDIO_PATH, audioPath)
             }
 
-            // Match within 60-second window
             var rows = db.update(
                 TABLE_CALL_RECORDS,
                 values,
@@ -192,7 +284,6 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
                 arrayOf(callerNumber, startTime.toString())
             )
 
-            // If not matched by exact number and time, update latest call record
             if (rows == 0) {
                 db.execSQL(
                     """
@@ -210,97 +301,6 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
         } catch (e: Exception) {
             Log.e(TAG, "Error updating audio path native: ${e.message}", e)
             0
-        }
-    }
-
-    /**
-     * Queries Android system CallLog immediately after call ends to reconcile
-     * true system duration, accurate call type, and resolved contact number & name
-     * BEFORE the user has a chance to manually delete it from the phone dialer.
-     */
-    fun reconcileFromSystemCallLog(expectedNumber: String, callStartTime: Long): Boolean {
-        return try {
-            val contentResolver = context.contentResolver
-            val projection = arrayOf(
-                CallLog.Calls.NUMBER,
-                CallLog.Calls.DATE,
-                CallLog.Calls.DURATION,
-                CallLog.Calls.TYPE,
-                CallLog.Calls.CACHED_NAME
-            )
-
-            val sortOrder = "${CallLog.Calls.DATE} DESC LIMIT 5"
-            contentResolver.query(CallLog.Calls.CONTENT_URI, projection, null, null, sortOrder)?.use { cursor ->
-                val numIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.NUMBER)
-                val dateIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.DATE)
-                val durIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.DURATION)
-                val typeIdx = cursor.getColumnIndexOrThrow(CallLog.Calls.TYPE)
-                val nameIdx = cursor.getColumnIndex(CallLog.Calls.CACHED_NAME)
-
-                val sanitizedExpected = expectedNumber.replace(Regex("[^0-9]"), "")
-
-                while (cursor.moveToNext()) {
-                    val logNum = cursor.getString(numIdx) ?: ""
-                    val logDate = cursor.getLong(dateIdx)
-                    val logDur = cursor.getInt(durIdx)
-                    val logType = cursor.getInt(typeIdx)
-                    val cachedName = if (nameIdx >= 0) cursor.getString(nameIdx) else null
-
-                    val sanitizedLogNum = logNum.replace(Regex("[^0-9]"), "")
-
-                    // Check if time matches within 3 minutes and numbers match (or expected was unknown)
-                    val timeDiff = Math.abs(logDate - callStartTime)
-                    val numMatches = expectedNumber.isEmpty() ||
-                            expectedNumber.equals("Unknown", ignoreCase = true) ||
-                            sanitizedExpected.endsWith(sanitizedLogNum) ||
-                            sanitizedLogNum.endsWith(sanitizedExpected)
-
-                    if (timeDiff < 180000 && numMatches) {
-                        val mappedType = when (logType) {
-                            CallLog.Calls.INCOMING_TYPE -> "incoming"
-                            CallLog.Calls.OUTGOING_TYPE -> "outgoing"
-                            CallLog.Calls.MISSED_TYPE -> "missed"
-                            CallLog.Calls.REJECTED_TYPE -> "rejected"
-                            CallLog.Calls.BLOCKED_TYPE -> "rejected"
-                            else -> "incoming"
-                        }
-                        val mappedStatus = if (mappedType == "missed" || mappedType == "rejected") "missed" else "ended"
-
-                        val resolvedName = if (!cachedName.isNullOrBlank()) {
-                            cachedName
-                        } else {
-                            getContactName(context, logNum)
-                        }
-
-                        val db = writableDatabase
-                        val values = ContentValues().apply {
-                            if (logNum.isNotEmpty() && !logNum.equals("Unknown", ignoreCase = true)) {
-                                put(COL_CALLER_NUMBER, logNum)
-                            }
-                            if (!resolvedName.isNullOrBlank()) {
-                                put(COL_CALLER_NAME, resolvedName)
-                            }
-                            put(COL_DURATION_SECONDS, logDur)
-                            put(COL_CALL_TYPE, mappedType)
-                            put(COL_CALL_STATUS, mappedStatus)
-                            put(COL_END_TIME, logDate + (logDur * 1000L))
-                        }
-
-                        val rows = db.update(
-                            TABLE_CALL_RECORDS,
-                            values,
-                            "$COL_ID = (SELECT $COL_ID FROM $TABLE_CALL_RECORDS ORDER BY $COL_START_TIME DESC LIMIT 1)",
-                            null
-                        )
-                        Log.d(TAG, "Reconciled native call record with system CallLog: num=$logNum, name=$resolvedName, dur=$logDur, type=$mappedType (rows: $rows)")
-                        return true
-                    }
-                }
-            }
-            false
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not reconcile with system CallLog: ${e.message}")
-            false
         }
     }
 }
