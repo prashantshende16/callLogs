@@ -172,12 +172,31 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
     }
 
     /**
+     * Data class holding the result of a system CallLog sync operation.
+     */
+    data class SyncResult(
+        val totalSynced: Int,
+        val recentCallCaptured: Boolean,
+        val capturedNumber: String?,
+        val capturedStartTime: Long,
+        val capturedRecordId: Long
+    )
+
+    /**
      * Reads recent calls from Android's system CallLog (CallLog.Calls)
      * and copies them directly into local SQLite database (call_records).
      * Automatically resolves contact names and matches/copies audio recordings.
+     *
+     * If [referenceEndTime] > 0, marks [SyncResult.recentCallCaptured] as true
+     * when a call ending within 45 seconds of [referenceEndTime] is processed.
      */
-    fun syncLatestFromSystemCallLog(limit: Int = 10): Int {
+    fun syncLatestFromSystemCallLog(limit: Int = 10, referenceEndTime: Long = 0L): SyncResult {
         var syncedCount = 0
+        var recentCaptured = false
+        var capturedNum: String? = null
+        var capturedStart: Long = 0L
+        var capturedId: Long = -1L
+
         try {
             val contentResolver = context.contentResolver
             val projection = arrayOf(
@@ -212,6 +231,13 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
 
                 val db = writableDatabase
 
+                // 1. Purge any temporary placeholder 'Unknown' entries
+                db.delete(
+                    TABLE_CALL_RECORDS,
+                    "$COL_CALLER_NUMBER = 'Unknown'",
+                    null
+                )
+
                 while (cursor.moveToNext()) {
                     val rawNum = cursor.getString(numIdx)
                     val logNum = if (!rawNum.isNullOrBlank()) rawNum.trim() else "Unknown"
@@ -240,15 +266,11 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
                     val simSlot = if (!simId.isNullOrBlank()) "SIM $simId" else null
                     val endTime = logDate + (logDur * 1000L)
 
+                    // Check if this call ended near referenceEndTime (within 45s)
+                    val isRecent = referenceEndTime > 0L && Math.abs(referenceEndTime - endTime) < 45000L
+
                     // Find and link audio recording file if available
                     val audioPath = NativeAudioScanner.findRecordingForCall(context, logNum, logDate, endTime)
-
-                    // 1. Purge any obsolete placeholder 'Unknown' entries matching approximately this time
-                    db.delete(
-                        TABLE_CALL_RECORDS,
-                        "$COL_CALLER_NUMBER = 'Unknown'",
-                        null
-                    )
 
                     // 2. Check if a record already exists with same number and approximate start time (within 30s)
                     val checkCursor = db.query(
@@ -259,7 +281,13 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
                         null, null, null
                     )
 
-                    val exists = checkCursor.use { it.moveToFirst() }
+                    var rowId: Long = -1L
+                    val exists = checkCursor.use {
+                        if (it.moveToFirst()) {
+                            rowId = it.getLong(0)
+                            true
+                        } else false
+                    }
 
                     if (exists) {
                         val values = ContentValues().apply {
@@ -273,8 +301,8 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
                         db.update(
                             TABLE_CALL_RECORDS,
                             values,
-                            "$COL_CALLER_NUMBER = ? AND ABS($COL_START_TIME - ?) < 30000",
-                            arrayOf(logNum, logDate.toString())
+                            "$COL_ID = ?",
+                            arrayOf(rowId.toString())
                         )
                         syncedCount++
                     } else {
@@ -291,16 +319,75 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
                             put(COL_AUDIO_PATH, audioPath)
                             put(COL_CREATED_AT, System.currentTimeMillis())
                         }
-                        db.insertWithOnConflict(TABLE_CALL_RECORDS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+                        rowId = db.insertWithOnConflict(TABLE_CALL_RECORDS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
                         syncedCount++
                     }
-                    Log.d(TAG, "Copied CallLog into local SQLite: num=$logNum, name=$resolvedName, type=$mappedType, dur=$logDur, audio=$audioPath")
+
+                    if (isRecent) {
+                        recentCaptured = true
+                        capturedNum = logNum
+                        capturedStart = logDate
+                        capturedId = rowId
+                    }
+
+                    Log.d(TAG, "Copied CallLog into local SQLite: num=$logNum, name=$resolvedName, type=$mappedType, dur=$logDur, audio=$audioPath, isRecent=$isRecent")
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error syncing CallLog to local SQLite: ${e.message}", e)
         }
-        return syncedCount
+        return SyncResult(syncedCount, recentCaptured, capturedNum, capturedStart, capturedId)
+    }
+
+    /**
+     * Returns the maximum record ID currently stored in call_records.
+     */
+    fun getMaxRecordId(): Long {
+        return try {
+            val db = readableDatabase
+            db.rawQuery("SELECT MAX($COL_ID) FROM $TABLE_CALL_RECORDS", null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getLong(0) else 0L
+            } ?: 0L
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    /**
+     * Returns the phone number stored for a given call record ID.
+     */
+    fun getNumberForRecordId(id: Long): String? {
+        if (id <= 0) return null
+        return try {
+            val db = readableDatabase
+            db.query(
+                TABLE_CALL_RECORDS,
+                arrayOf(COL_CALLER_NUMBER),
+                "$COL_ID = ?",
+                arrayOf(id.toString()),
+                null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Updates the audio backup path for a specific call record ID.
+     */
+    fun updateAudioPathById(id: Long, audioPath: String): Int {
+        if (id <= 0) return 0
+        return try {
+            val db = writableDatabase
+            val values = ContentValues().apply {
+                put(COL_AUDIO_PATH, audioPath)
+            }
+            db.update(TABLE_CALL_RECORDS, values, "$COL_ID = ?", arrayOf(id.toString()))
+        } catch (e: Exception) {
+            0
+        }
     }
 
     /**
