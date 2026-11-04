@@ -92,16 +92,30 @@ class CallRecordTile extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Caller Number
+                      // Caller Name / Number
                       Text(
-                        record.callerNumber,
+                        record.displayName,
                         style: const TextStyle(
-                          fontSize: 16,
+                          fontSize: 15.5,
                           fontWeight: FontWeight.w600,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
+                      if (record.hasContactName)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 1),
+                          child: Text(
+                            record.callerNumber,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       const SizedBox(height: 3),
 
                       // Direction: Caller -> Receiver

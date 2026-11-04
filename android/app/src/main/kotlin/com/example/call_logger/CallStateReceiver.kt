@@ -40,6 +40,17 @@ class CallStateReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_NEW_OUTGOING_CALL) {
+            val outgoingNum = intent.getStringExtra(Intent.EXTRA_PHONE_NUMBER)
+            if (!outgoingNum.isNullOrBlank()) {
+                savedNumber = outgoingNum.trim()
+                isIncoming = false
+                callStartTime = System.currentTimeMillis()
+                Log.d(TAG, "NEW_OUTGOING_CALL captured dialed number: $outgoingNum")
+            }
+            return
+        }
+
         if (intent.action != TelephonyManager.ACTION_PHONE_STATE_CHANGED) {
             return
         }
@@ -130,6 +141,9 @@ class CallStateReceiver : BroadcastReceiver() {
                     // Outgoing call started
                     isIncoming = false
                     callStartTime = System.currentTimeMillis()
+                    if (savedNumber.isNullOrBlank() || savedNumber == "Unknown") {
+                        savedNumber = getLatestOutgoingCallNumber(context) ?: savedNumber
+                    }
                     val event = mapOf(
                         "event" to "connected",
                         "number" to (savedNumber ?: "Unknown"),
@@ -163,9 +177,14 @@ class CallStateReceiver : BroadcastReceiver() {
                     callStatus = "ended"
                 }
 
+                val callSavedNumber = savedNumber ?: "Unknown"
+                val callStart = callStartTime
+                val contactName = NativeDatabaseHelper.getContactName(context, callSavedNumber)
+
                 val event = mutableMapOf<String, Any?>(
                     "event" to "ended",
-                    "number" to (savedNumber ?: "Unknown"),
+                    "number" to callSavedNumber,
+                    "callerName" to contactName,
                     "callType" to callType,
                     "callStatus" to callStatus,
                     "startTime" to callStartTime,
@@ -174,9 +193,6 @@ class CallStateReceiver : BroadcastReceiver() {
                     "simSlot" to detectedSimSlot,
                     "audioPath" to audioPath
                 )
-
-                val callSavedNumber = savedNumber ?: "Unknown"
-                val callStart = callStartTime
 
                 // 1. Get receiver phone number from preferences
                 val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
@@ -200,20 +216,25 @@ class CallStateReceiver : BroadcastReceiver() {
                     endTime = endTime,
                     durationSeconds = durationSec,
                     simSlot = detectedSimSlot,
-                    audioPath = audioPath
+                    audioPath = audioPath,
+                    callerName = contactName
                 )
 
                 // 3. Dispatch notification to Flutter if UI is active
                 notifyFlutter(event)
 
-                // 4. Delayed reconciliation with system CallLog (1.5s)
-                Handler(Looper.getMainLooper()).postDelayed({
-                    // Reconcile in native SQLite first so data is saved even if user deletes call from dialer
-                    NativeDatabaseHelper.getInstance(context).reconcileFromSystemCallLog(callSavedNumber, callStart)
-
-                    val delayedSyncEvent = mapOf("event" to "sync_latest_call_log")
-                    notifyFlutter(delayedSyncEvent)
-                }, 1500)
+                // 4. Rapid multi-delay reconciliation with system CallLog
+                // Reconcile quickly (50ms, 350ms, 1200ms, 2500ms) to capture details before user can delete!
+                val reconcileDelays = listOf(50L, 350L, 1200L, 2500L)
+                for (delay in reconcileDelays) {
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        val reconciled = NativeDatabaseHelper.getInstance(context).reconcileFromSystemCallLog(callSavedNumber, callStart)
+                        if (reconciled) {
+                            val delayedSyncEvent = mapOf("event" to "sync_latest_call_log")
+                            notifyFlutter(delayedSyncEvent)
+                        }
+                    }, delay)
+                }
 
                 // 5. Schedule scans for Vivo / Realme / Samsung recording files
                 scheduleNativeRecordingScan(context, callSavedNumber, callStart, endTime)
@@ -264,6 +285,33 @@ class CallStateReceiver : BroadcastReceiver() {
     private fun notifyFlutter(data: Map<String, Any?>) {
         Handler(Looper.getMainLooper()).post {
             callEventListener?.invoke(data)
+        }
+    }
+
+    private fun getLatestOutgoingCallNumber(context: Context): String? {
+        return try {
+            val projection = arrayOf(android.provider.CallLog.Calls.NUMBER, android.provider.CallLog.Calls.DATE)
+            val selection = "${android.provider.CallLog.Calls.TYPE} = ?"
+            val selectionArgs = arrayOf(android.provider.CallLog.Calls.OUTGOING_TYPE.toString())
+            val sortOrder = "${android.provider.CallLog.Calls.DATE} DESC LIMIT 1"
+            context.contentResolver.query(
+                android.provider.CallLog.Calls.CONTENT_URI,
+                projection,
+                selection,
+                selectionArgs,
+                sortOrder
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val dateIdx = cursor.getColumnIndexOrThrow(android.provider.CallLog.Calls.DATE)
+                    val numIdx = cursor.getColumnIndexOrThrow(android.provider.CallLog.Calls.NUMBER)
+                    val date = cursor.getLong(dateIdx)
+                    if (Math.abs(System.currentTimeMillis() - date) < 45000) {
+                        cursor.getString(numIdx)
+                    } else null
+                } else null
+            }
+        } catch (_: Exception) {
+            null
         }
     }
 }

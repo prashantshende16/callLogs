@@ -6,11 +6,12 @@ import '../models/call_record.dart';
 /// Manages SQLite database lifecycle, schema migrations, and CRUD operations.
 class DatabaseHelper {
   static const String _databaseName = 'call_logger.db';
-  static const int _databaseVersion = 2;
+  static const int _databaseVersion = 3;
 
   static const String tableCallRecords = 'call_records';
   static const String colId = 'id';
   static const String colCallerNumber = 'caller_number';
+  static const String colCallerName = 'caller_name';
   static const String colReceiverNumber = 'receiver_number';
   static const String colCallType = 'call_type';
   static const String colCallStatus = 'call_status';
@@ -52,6 +53,7 @@ class DatabaseHelper {
       CREATE TABLE $tableCallRecords (
         $colId INTEGER PRIMARY KEY AUTOINCREMENT,
         $colCallerNumber TEXT NOT NULL,
+        $colCallerName TEXT,
         $colReceiverNumber TEXT NOT NULL,
         $colCallType TEXT NOT NULL,
         $colCallStatus TEXT NOT NULL,
@@ -81,6 +83,9 @@ class DatabaseHelper {
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await db.execute('ALTER TABLE $tableCallRecords ADD COLUMN $colAudioPath TEXT;');
+    }
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE $tableCallRecords ADD COLUMN $colCallerName TEXT;');
     }
   }
 
@@ -125,10 +130,11 @@ class DatabaseHelper {
     final whereClauses = <String>[];
     final whereArgs = <dynamic>[];
 
-    // Filter by search query (caller number or receiver number)
+    // Filter by search query (caller number, caller name, or receiver number)
     if (searchQuery != null && searchQuery.trim().isNotEmpty) {
       final query = '%${searchQuery.trim()}%';
-      whereClauses.add('($colCallerNumber LIKE ? OR $colReceiverNumber LIKE ?)');
+      whereClauses.add('($colCallerNumber LIKE ? OR $colReceiverNumber LIKE ? OR $colCallerName LIKE ?)');
+      whereArgs.add(query);
       whereArgs.add(query);
       whereArgs.add(query);
     }

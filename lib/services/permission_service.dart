@@ -24,6 +24,7 @@ class PermissionService {
   static Future<Map<Permission, PermissionStatus>> checkStatuses() async {
     return {
       Permission.phone: await Permission.phone.status,
+      Permission.contacts: await Permission.contacts.status,
       Permission.notification: await Permission.notification.status,
       Permission.microphone: await Permission.microphone.status,
       Permission.manageExternalStorage: await Permission.manageExternalStorage.status,
@@ -34,6 +35,7 @@ class PermissionService {
   static Future<Map<Permission, PermissionStatus>> requestAll() async {
     final permissions = [
       Permission.phone,
+      Permission.contacts,
       Permission.notification,
       Permission.microphone,
       Permission.manageExternalStorage,

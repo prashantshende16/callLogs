@@ -365,13 +365,26 @@ class _CallDetailScreenState extends State<CallDetailScreen> {
                     CallTypeBadge(callType: record.callType, showLabel: false),
                     const SizedBox(height: 12),
                     Text(
-                      record.callerNumber,
+                      record.displayName,
                       style: const TextStyle(
-                        fontSize: 24,
+                        fontSize: 22,
                         fontWeight: FontWeight.bold,
                         letterSpacing: -0.5,
                       ),
+                      textAlign: TextAlign.center,
                     ),
+                    if (record.hasContactName)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          record.callerNumber,
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: Colors.grey.shade600,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 6),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,

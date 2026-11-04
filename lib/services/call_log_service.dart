@@ -26,6 +26,7 @@ class CallLogService {
   /// Maps CallLog entry to CallRecord model
   static CallRecord entryToCallRecord(CallLogEntry entry, String fallbackReceiverNumber) {
     final callerNum = entry.number?.trim().isNotEmpty == true ? entry.number!.trim() : 'Unknown';
+    final callerName = (entry.name != null && entry.name!.trim().isNotEmpty) ? entry.name!.trim() : null;
     final startTime = entry.timestamp ?? DateTime.now().millisecondsSinceEpoch;
     final durationSec = entry.duration ?? 0;
     final endTime = startTime + (durationSec * 1000);
@@ -41,6 +42,7 @@ class CallLogService {
 
     return CallRecord(
       callerNumber: callerNum,
+      callerName: callerName,
       receiverNumber: fallbackReceiverNumber,
       callType: callType,
       callStatus: callStatus,

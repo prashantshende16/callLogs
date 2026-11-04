@@ -72,16 +72,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        titleSpacing: 16,
         title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Android Services',
-              style: TextStyle(fontWeight: FontWeight.bold),
+            const Flexible(
+              child: Text(
+                'Android Services',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Container(
-              width: 9,
-              height: 9,
+              width: 8,
+              height: 8,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: settings.isMonitoringEnabled ? Colors.greenAccent.shade700 : Colors.grey,
@@ -96,17 +101,20 @@ class _HomeScreenState extends State<HomeScreen> {
             alignment: Alignment.center,
             children: [
               IconButton(
-                icon: const Icon(Icons.filter_list),
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.all(8),
+                constraints: const BoxConstraints(),
+                icon: const Icon(Icons.filter_list, size: 22),
                 tooltip: 'Filter Records',
                 onPressed: _showFilterModal,
               ),
               if (hasFilters)
                 Positioned(
-                  right: 8,
-                  top: 8,
+                  right: 4,
+                  top: 4,
                   child: Container(
-                    width: 8,
-                    height: 8,
+                    width: 7,
+                    height: 7,
                     decoration: const BoxDecoration(
                       color: Colors.red,
                       shape: BoxShape.circle,
@@ -115,15 +123,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
             ],
           ),
+          const SizedBox(width: 4),
           IconButton(
-            icon: const Icon(Icons.lock_outline_rounded),
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(),
+            icon: const Icon(Icons.lock_outline_rounded, size: 22),
             tooltip: 'Lock App',
             onPressed: () {
               Provider.of<AuthProvider>(context, listen: false).lock();
             },
           ),
+          const SizedBox(width: 4),
           IconButton(
-            icon: const Icon(Icons.settings_outlined),
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(),
+            icon: const Icon(Icons.settings_outlined, size: 22),
             tooltip: 'Settings',
             onPressed: () {
               Navigator.of(context).push(
@@ -131,6 +147,7 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             },
           ),
+          const SizedBox(width: 8),
         ],
       ),
       body: Column(
@@ -228,12 +245,11 @@ class _HomeScreenState extends State<HomeScreen> {
         border: Border.all(color: Colors.grey.shade200),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildStatItem('Total', '${provider.totalCalls}', Colors.blueGrey),
-          _buildStatItem('Incoming', '${provider.incomingCount}', Colors.green),
-          _buildStatItem('Outgoing', '${provider.outgoingCount}', Colors.blue),
-          _buildStatItem('Missed', '${provider.missedCount}', Colors.red),
+          Expanded(child: _buildStatItem('Total', '${provider.totalCalls}', Colors.blueGrey)),
+          Expanded(child: _buildStatItem('Incoming', '${provider.incomingCount}', Colors.green)),
+          Expanded(child: _buildStatItem('Outgoing', '${provider.outgoingCount}', Colors.blue)),
+          Expanded(child: _buildStatItem('Missed', '${provider.missedCount}', Colors.red)),
         ],
       ),
     );

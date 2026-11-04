@@ -52,6 +52,7 @@ class CallRecordProvider with ChangeNotifier {
 
       if (eventType == 'ended') {
         final callerNumber = (event['number'] as String?) ?? 'Unknown';
+        final callerName = event['callerName'] as String?;
         final callType = (event['callType'] as String?) ?? 'incoming';
         final callStatus = (event['callStatus'] as String?) ?? 'ended';
         final startTime = (event['startTime'] as int?) ?? DateTime.now().millisecondsSinceEpoch;
@@ -62,6 +63,7 @@ class CallRecordProvider with ChangeNotifier {
 
         final record = CallRecord(
           callerNumber: callerNumber,
+          callerName: callerName,
           receiverNumber: receiverNumber,
           callType: callType,
           callStatus: callStatus,

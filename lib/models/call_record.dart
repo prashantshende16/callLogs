@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 class CallRecord {
   final int? id;
   final String callerNumber;
+  final String? callerName;
   final String receiverNumber;
   final String callType; // 'incoming', 'outgoing', 'missed', 'rejected'
   final String callStatus; // 'ringing', 'connected', 'ended'
@@ -17,6 +18,7 @@ class CallRecord {
   CallRecord({
     this.id,
     required this.callerNumber,
+    this.callerName,
     required this.receiverNumber,
     required this.callType,
     required this.callStatus,
@@ -33,6 +35,7 @@ class CallRecord {
     return CallRecord(
       id: map['id'] as int?,
       callerNumber: map['caller_number'] as String? ?? 'Unknown',
+      callerName: map['caller_name'] as String?,
       receiverNumber: map['receiver_number'] as String? ?? 'Unknown',
       callType: (map['call_type'] as String? ?? 'incoming').toLowerCase(),
       callStatus: (map['call_status'] as String? ?? 'ended').toLowerCase(),
@@ -49,6 +52,7 @@ class CallRecord {
   Map<String, dynamic> toMap() {
     final map = <String, dynamic>{
       'caller_number': callerNumber,
+      'caller_name': callerName,
       'receiver_number': receiverNumber,
       'call_type': callType.toLowerCase(),
       'call_status': callStatus.toLowerCase(),
@@ -68,6 +72,7 @@ class CallRecord {
   CallRecord copyWith({
     int? id,
     String? callerNumber,
+    String? callerName,
     String? receiverNumber,
     String? callType,
     String? callStatus,
@@ -81,6 +86,7 @@ class CallRecord {
     return CallRecord(
       id: id ?? this.id,
       callerNumber: callerNumber ?? this.callerNumber,
+      callerName: callerName ?? this.callerName,
       receiverNumber: receiverNumber ?? this.receiverNumber,
       callType: callType ?? this.callType,
       callStatus: callStatus ?? this.callStatus,
@@ -91,6 +97,25 @@ class CallRecord {
       audioPath: audioPath ?? this.audioPath,
       createdAt: createdAt ?? this.createdAt,
     );
+  }
+
+  /// Best display name: contact name if known, else caller number, else 'Unknown'
+  String get displayName {
+    if (callerName != null && callerName!.trim().isNotEmpty && callerName!.trim().toLowerCase() != 'unknown') {
+      return callerName!.trim();
+    }
+    if (callerNumber.trim().isNotEmpty && callerNumber.trim().toLowerCase() != 'unknown') {
+      return callerNumber.trim();
+    }
+    return 'Unknown';
+  }
+
+  /// Whether a recognized contact name is available separate from the phone number
+  bool get hasContactName {
+    return callerName != null &&
+        callerName!.trim().isNotEmpty &&
+        callerName!.trim().toLowerCase() != 'unknown' &&
+        callerName!.trim() != callerNumber.trim();
   }
 
   /// Formatted duration in "MM:SS" or "Xh Ym Zs"
