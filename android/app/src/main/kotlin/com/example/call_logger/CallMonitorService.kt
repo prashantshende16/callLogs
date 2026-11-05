@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -57,7 +58,7 @@ class CallMonitorService : Service() {
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "CallMonitorService onCreate: Starting foreground notification")
-        startForeground(NOTIFICATION_ID, buildNotification())
+        startForegroundNotification()
         isServiceRunning = true
 
         telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
@@ -155,6 +156,44 @@ class CallMonitorService : Service() {
         } catch (e: Exception) {
             Log.w(TAG, "Could not resolve contact name: ${e.message}")
             null
+        }
+    }
+
+    /**
+     * Starts foreground service with phoneCall type (with MANAGE_OWN_CALLS) or dataSync fallback.
+     */
+    private fun startForegroundNotification() {
+        val notification = buildNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
+                    )
+                } else {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
+                    )
+                }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "Starting FGS with phoneCall failed, falling back to dataSync: ${e.message}")
+                try {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                    )
+                } catch (e2: Exception) {
+                    Log.e(TAG, "Failed to start foreground service with dataSync fallback: ${e2.message}")
+                    startForeground(NOTIFICATION_ID, notification)
+                }
+            }
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
         }
     }
 
