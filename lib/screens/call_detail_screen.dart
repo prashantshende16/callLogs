@@ -39,7 +39,26 @@ class _CallDetailScreenState extends State<CallDetailScreen> {
   }
 
   Future<void> _initAudio() async {
-    final path = widget.record.audioPath;
+    var path = widget.record.audioPath;
+
+    // If audio was not already linked, auto-scan device directories for recording
+    if (path == null || !File(path).existsSync()) {
+      final found = await NativeCallService.findNativeRecordingForCall(
+        widget.record.callerNumber,
+        widget.record.startTime,
+        widget.record.endTime,
+      );
+      if (found != null && found.isNotEmpty && mounted) {
+        path = found;
+        if (widget.record.id != null) {
+          await DatabaseHelper.instance.updateAudioPath(widget.record.id!, found);
+          if (mounted) {
+            Provider.of<CallRecordProvider>(context, listen: false).loadRecords();
+          }
+        }
+      }
+    }
+
     if (path != null && File(path).existsSync()) {
       final dur = await NativeCallService.getAudioDuration(path);
       if (mounted) {

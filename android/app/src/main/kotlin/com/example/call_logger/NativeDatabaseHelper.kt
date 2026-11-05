@@ -34,6 +34,7 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
         const val COL_TYPE = "type"
         const val COL_DATE = "date"
         const val COL_DURATION = "duration"
+        const val COL_AUDIO_PATH = "audio_path"
 
         @Volatile
         private var instance: NativeDatabaseHelper? = null
@@ -70,6 +71,7 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
                 $COL_TYPE INTEGER NOT NULL,
                 $COL_DATE INTEGER NOT NULL,
                 $COL_DURATION INTEGER NOT NULL,
+                $COL_AUDIO_PATH TEXT,
                 UNIQUE($COL_NUMBER, $COL_DATE) ON CONFLICT REPLACE
             )
             """.trimIndent()
@@ -79,6 +81,15 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+
+    override fun onOpen(db: SQLiteDatabase) {
+        super.onOpen(db)
+        try {
+            db.execSQL("ALTER TABLE $TABLE_CALL_RECORDS ADD COLUMN $COL_AUDIO_PATH TEXT")
+        } catch (_: Exception) {
+            // Column already exists
+        }
+    }
 
     /**
      * STEP 1: Records the call AT THE EXACT MOMENT it starts / rings / dials.
@@ -338,5 +349,73 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
         return count
     }
 
-    fun updateAudioPath(number: String, date: Long, audioPath: String): Int = 1
+    /**
+     * Updates the audio recording file path for a specific call record.
+     * Matches by number and timestamp window, or falls back to the most recent call.
+     */
+    fun updateAudioPath(number: String?, date: Long, audioPath: String): Int {
+        if (audioPath.isBlank()) return 0
+        return try {
+            val db = writableDatabase
+            val values = ContentValues().apply {
+                put(COL_AUDIO_PATH, audioPath)
+            }
+
+            var rows = 0
+            if (!number.isNullOrBlank() && number != "Unknown") {
+                val cleanNumber = number.trim()
+                val minDate = if (date > 0) date - 60_000L else System.currentTimeMillis() - 120_000L
+                val maxDate = if (date > 0) date + 60_000L else System.currentTimeMillis() + 120_000L
+
+                rows = db.update(
+                    TABLE_CALL_RECORDS,
+                    values,
+                    "$COL_NUMBER = ? AND $COL_DATE >= ? AND $COL_DATE <= ?",
+                    arrayOf(cleanNumber, minDate.toString(), maxDate.toString())
+                )
+            }
+
+            if (rows == 0 && date > 0) {
+                // Try matching by date within 30s
+                val minDate = date - 30_000L
+                val maxDate = date + 30_000L
+                rows = db.update(
+                    TABLE_CALL_RECORDS,
+                    values,
+                    "$COL_DATE >= ? AND $COL_DATE <= ?",
+                    arrayOf(minDate.toString(), maxDate.toString())
+                )
+            }
+
+            if (rows == 0) {
+                // Fallback: update newest call record
+                val cursor = db.query(
+                    TABLE_CALL_RECORDS,
+                    arrayOf(COL_ID),
+                    null,
+                    null,
+                    null,
+                    null,
+                    "$COL_DATE DESC LIMIT 1"
+                )
+                cursor?.use {
+                    if (it.moveToFirst()) {
+                        val latestId = it.getLong(0)
+                        rows = db.update(
+                            TABLE_CALL_RECORDS,
+                            values,
+                            "$COL_ID = ?",
+                            arrayOf(latestId.toString())
+                        )
+                    }
+                }
+            }
+
+            Log.d(TAG, "updateAudioPath: Updated $rows rows with audio_path=$audioPath")
+            rows
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed in updateAudioPath: ${e.message}", e)
+            0
+        }
+    }
 }

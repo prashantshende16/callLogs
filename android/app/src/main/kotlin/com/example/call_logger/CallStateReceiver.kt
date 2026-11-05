@@ -200,6 +200,33 @@ class CallStateReceiver : BroadcastReceiver() {
                                     helper.updateFallbackDuration(targetNumber, callStart, duration)
                                     CallMonitorService.notifyFlutterCallLogged()
                                 }
+
+                                // STEP 3: Scan, copy to app storage, and link audio recording to SQLite
+                                try {
+                                    val startRef = if (callStart > 0L) callStart else referenceTime - 60_000L
+                                    var copiedPath = NativeAudioScanner.scanAndAttachRecording(
+                                        context,
+                                        targetNumber,
+                                        startRef,
+                                        referenceTime
+                                    )
+                                    if (copiedPath == null) {
+                                        // Brief retry after 1.5 seconds as OEM voice recorder finalizes file flush
+                                        Thread.sleep(1500)
+                                        copiedPath = NativeAudioScanner.scanAndAttachRecording(
+                                            context,
+                                            targetNumber,
+                                            startRef,
+                                            referenceTime
+                                        )
+                                    }
+                                    if (copiedPath != null) {
+                                        Log.d(TAG, "Audio recording automatically linked: $copiedPath")
+                                        CallMonitorService.notifyFlutterCallLogged()
+                                    }
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Voice recording scan error: ${e.message}")
+                                }
                             } catch (e: Exception) {
                                 Log.e(TAG, "Error in async call capture: ${e.message}", e)
                             } finally {

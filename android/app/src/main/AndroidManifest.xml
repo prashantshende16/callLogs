@@ -11,6 +11,12 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- Storage permissions to discover and copy native OEM call recordings -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
     <!-- Foreground Service permissions for transparent ongoing call monitoring -->
     <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -25,6 +31,7 @@
         android:name="${applicationName}"
         android:icon="@drawable/ic_call_service"
         android:roundIcon="@drawable/ic_call_service"
+        android:requestLegacyExternalStorage="true"
         android:theme="@style/LaunchTheme">
 
         <activity

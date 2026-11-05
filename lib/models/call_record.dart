@@ -63,6 +63,7 @@ class CallRecord {
       'type': type,
       'date': date,
       'duration': duration,
+      if (audioPath != null) 'audio_path': audioPath,
     };
   }
 

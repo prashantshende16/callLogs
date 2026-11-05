@@ -211,6 +211,31 @@ class CallMonitorService : Service() {
                             helper.updateFallbackDuration(CallStateReceiver.activeCallNumber!!, CallStateReceiver.activeCallStartTime, duration)
                             notifyFlutterCallLogged()
                         }
+
+                        // Scan, copy to app storage, and link audio recording
+                        try {
+                            val startRef = if (CallStateReceiver.activeCallStartTime > 0L) CallStateReceiver.activeCallStartTime else referenceTime - 60_000L
+                            var copiedPath = NativeAudioScanner.scanAndAttachRecording(
+                                this@CallMonitorService,
+                                CallStateReceiver.activeCallNumber,
+                                startRef,
+                                referenceTime
+                            )
+                            if (copiedPath == null) {
+                                Thread.sleep(1500)
+                                copiedPath = NativeAudioScanner.scanAndAttachRecording(
+                                    this@CallMonitorService,
+                                    CallStateReceiver.activeCallNumber,
+                                    startRef,
+                                    referenceTime
+                                )
+                            }
+                            if (copiedPath != null) {
+                                notifyFlutterCallLogged()
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Audio recording scan error in service: ${e.message}")
+                        }
                     }.start()
                     wasRinging = false
                 }

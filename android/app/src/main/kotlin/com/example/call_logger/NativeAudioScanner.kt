@@ -121,6 +121,32 @@ object NativeAudioScanner {
         return null
     }
 
+    /**
+     * Scans for a native call recording, copies it into our app's storage location,
+     * updates the SQLite database with the new copied path, and returns the path.
+     */
+    fun scanAndAttachRecording(
+        context: Context,
+        number: String?,
+        callStartTimeMs: Long,
+        callEndTimeMs: Long
+    ): String? {
+        try {
+            val safeNumber = number ?: ""
+            Log.d(TAG, "scanAndAttachRecording for number=$safeNumber, start=$callStartTimeMs, end=$callEndTimeMs")
+            val copiedPath = findRecordingForCall(context, safeNumber, callStartTimeMs, callEndTimeMs)
+            if (!copiedPath.isNullOrBlank()) {
+                val refDate = if (callStartTimeMs > 0) callStartTimeMs else callEndTimeMs
+                val updated = NativeDatabaseHelper.getInstance(context).updateAudioPath(safeNumber, refDate, copiedPath)
+                Log.d(TAG, "Attached recording to call record (rows updated: $updated): $copiedPath")
+                return copiedPath
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in scanAndAttachRecording: ${e.message}", e)
+        }
+        return null
+    }
+
     private fun scanDirectoriesForCall(
         sanitizedNumber: String,
         callStartTimeMs: Long,

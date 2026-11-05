@@ -15,6 +15,7 @@ class DatabaseHelper {
   static const String colType = 'type';
   static const String colDate = 'date';
   static const String colDuration = 'duration';
+  static const String colAudioPath = 'audio_path';
 
   // Singleton instance
   DatabaseHelper._internal();
@@ -36,6 +37,11 @@ class DatabaseHelper {
       path,
       version: _databaseVersion,
       onCreate: _onCreate,
+      onOpen: (db) async {
+        try {
+          await db.execute('ALTER TABLE $tableCallRecords ADD COLUMN $colAudioPath TEXT');
+        } catch (_) {}
+      },
     );
   }
 
@@ -49,7 +55,8 @@ class DatabaseHelper {
         $colType INTEGER NOT NULL,
         $colDate INTEGER NOT NULL,
         $colDuration INTEGER NOT NULL,
-        UNIQUE($colNumber, $colDate) ON CONFLICT IGNORE
+        $colAudioPath TEXT,
+        UNIQUE($colNumber, $colDate) ON CONFLICT REPLACE
       )
     ''');
 
@@ -177,7 +184,13 @@ class DatabaseHelper {
 
   /// Updates the audio recording file path for a specific call record ID
   Future<int> updateAudioPath(int id, String path) async {
-    return 1;
+    final db = await database;
+    return await db.update(
+      tableCallRecords,
+      {colAudioPath: path},
+      where: '$colId = ?',
+      whereArgs: [id],
+    );
   }
 
   // Compatibility helper
