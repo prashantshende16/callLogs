@@ -148,6 +148,15 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
+                "syncHistoricalCalls" -> {
+                    Thread {
+                        val count = NativeDatabaseHelper(this).syncHistoricalCalls(200)
+                        runOnUiThread {
+                            result.success(count)
+                        }
+                    }.start()
+                }
+
                 "pickAudioWithSystemPicker" -> {
                     pendingPickerResult = result
                     try {
@@ -173,6 +182,13 @@ class MainActivity : FlutterActivity() {
         CallStateReceiver.callEventListener = { eventData ->
             runOnUiThread {
                 methodChannel?.invokeMethod("onCallEvent", eventData)
+            }
+        }
+
+        // Connect CallMonitorService notification callback to Flutter
+        CallMonitorService.onCallLoggedListener = {
+            runOnUiThread {
+                methodChannel?.invokeMethod("onCallLogged", null)
             }
         }
 

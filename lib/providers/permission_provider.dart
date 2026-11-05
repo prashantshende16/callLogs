@@ -15,6 +15,11 @@ class PermissionProvider with ChangeNotifier {
   bool get isPermanentlyDenied => _isPermanentlyDenied;
   Map<Permission, PermissionStatus> get statuses => _statuses;
 
+  bool get isPhoneGranted => _statuses[Permission.phone]?.isGranted ?? false;
+  bool get isCallLogGranted => _statuses[Permission.phone]?.isGranted ?? false;
+  bool get isContactsGranted => _statuses[Permission.contacts]?.isGranted ?? false;
+  bool get isNotificationGranted => _statuses[Permission.notification]?.isGranted ?? false;
+
   PermissionProvider() {
     checkPermissions();
   }
@@ -26,7 +31,6 @@ class PermissionProvider with ChangeNotifier {
 
     try {
       _statuses = await PermissionService.checkStatuses();
-
       _areAllGranted = _statuses.values.every((s) => s.isGranted);
       _isPermanentlyDenied = _statuses.values.any((s) => s.isPermanentlyDenied);
     } catch (e) {
@@ -46,10 +50,8 @@ class PermissionProvider with ChangeNotifier {
 
     try {
       _statuses = await PermissionService.requestAll();
-
       _areAllGranted = _statuses.values.every((s) => s.isGranted);
       _isPermanentlyDenied = _statuses.values.any((s) => s.isPermanentlyDenied);
-
       return _areAllGranted;
     } catch (e) {
       if (kDebugMode) {
@@ -62,9 +64,10 @@ class PermissionProvider with ChangeNotifier {
     }
   }
 
+  Future<bool> requestAllPermissions() => requestPermissions();
+
   /// Directs user to the system App Settings if permissions are permanently denied
   Future<void> openSettings() async {
     await PermissionService.openSettings();
   }
 }
-

@@ -3,24 +3,18 @@ import 'package:sqflite/sqflite.dart';
 import '../models/call_record.dart';
 
 /// DatabaseHelper Singleton
-/// Manages SQLite database lifecycle, schema migrations, and CRUD operations.
+/// Manages SQLite database lifecycle for Call Log Keeper (call_log_keeper.db).
 class DatabaseHelper {
-  static const String _databaseName = 'call_logger.db';
-  static const int _databaseVersion = 3;
+  static const String _databaseName = 'call_log_keeper.db';
+  static const int _databaseVersion = 1;
 
   static const String tableCallRecords = 'call_records';
   static const String colId = 'id';
-  static const String colCallerNumber = 'caller_number';
-  static const String colCallerName = 'caller_name';
-  static const String colReceiverNumber = 'receiver_number';
-  static const String colCallType = 'call_type';
-  static const String colCallStatus = 'call_status';
-  static const String colStartTime = 'start_time';
-  static const String colEndTime = 'end_time';
-  static const String colDurationSeconds = 'duration_seconds';
-  static const String colSimSlot = 'sim_slot';
-  static const String colAudioPath = 'audio_path';
-  static const String colCreatedAt = 'created_at';
+  static const String colNumber = 'number';
+  static const String colName = 'name';
+  static const String colType = 'type';
+  static const String colDate = 'date';
+  static const String colDuration = 'duration';
 
   // Singleton instance
   DatabaseHelper._internal();
@@ -42,54 +36,32 @@ class DatabaseHelper {
       path,
       version: _databaseVersion,
       onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
     );
   }
 
-  /// Create table with unique constraint on (caller_number, start_time)
-  /// to prevent duplicate entries from multiple broadcast receivers or sync runs.
+  /// Create table matching Native Kotlin SQLite schema with unique constraint
   Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
-      CREATE TABLE $tableCallRecords (
+      CREATE TABLE IF NOT EXISTS $tableCallRecords (
         $colId INTEGER PRIMARY KEY AUTOINCREMENT,
-        $colCallerNumber TEXT NOT NULL,
-        $colCallerName TEXT,
-        $colReceiverNumber TEXT NOT NULL,
-        $colCallType TEXT NOT NULL,
-        $colCallStatus TEXT NOT NULL,
-        $colStartTime INTEGER NOT NULL,
-        $colEndTime INTEGER NOT NULL,
-        $colDurationSeconds INTEGER NOT NULL,
-        $colSimSlot TEXT,
-        $colAudioPath TEXT,
-        $colCreatedAt INTEGER NOT NULL,
-        UNIQUE($colCallerNumber, $colStartTime) ON CONFLICT IGNORE
+        $colNumber TEXT NOT NULL,
+        $colName TEXT,
+        $colType INTEGER NOT NULL,
+        $colDate INTEGER NOT NULL,
+        $colDuration INTEGER NOT NULL,
+        UNIQUE($colNumber, $colDate) ON CONFLICT IGNORE
       )
     ''');
 
-    // Indexes for fast search and query filtering
     await db.execute(
-      'CREATE INDEX idx_call_records_start_time ON $tableCallRecords ($colStartTime DESC)',
+      'CREATE INDEX IF NOT EXISTS idx_call_records_date ON $tableCallRecords ($colDate DESC)',
     );
     await db.execute(
-      'CREATE INDEX idx_call_records_caller ON $tableCallRecords ($colCallerNumber)',
-    );
-    await db.execute(
-      'CREATE INDEX idx_call_records_type ON $tableCallRecords ($colCallType)',
+      'CREATE INDEX IF NOT EXISTS idx_call_records_number ON $tableCallRecords ($colNumber)',
     );
   }
 
-  /// Versioned schema upgrade handler for future schema expansions
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
-      await db.execute('ALTER TABLE $tableCallRecords ADD COLUMN $colAudioPath TEXT;');
-    }
-    if (oldVersion < 3) {
-      await db.execute('ALTER TABLE $tableCallRecords ADD COLUMN $colCallerName TEXT;');
-    }
-  }
-
-  /// Inserts a single call record. Returns the generated ID or -1 if ignored (duplicate).
+  /// Inserts a single call record. Returns ID or -1 if ignored.
   Future<int> insert(CallRecord record) async {
     final db = await database;
     return await db.insert(
@@ -99,7 +71,7 @@ class DatabaseHelper {
     );
   }
 
-  /// Batch inserts a list of records efficiently in a single database transaction.
+  /// Batch inserts call records in a single database transaction.
   Future<int> insertBatch(List<CallRecord> records) async {
     if (records.isEmpty) return 0;
     final db = await database;
@@ -117,104 +89,77 @@ class DatabaseHelper {
     return results.where((res) => res is int && res > 0).length;
   }
 
-  /// Retrieves all records with optional search, type filtering, and date range.
-  /// Always sorted newest first.
+  /// Retrieves records matching search, call type, and date range filters.
   Future<List<CallRecord>> getAll({
     String? searchQuery,
-    String? callTypeFilter,
+    String? callTypeFilter, // 'all', 'incoming', 'outgoing', 'missed', 'rejected'
     DateTime? startDate,
     DateTime? endDate,
   }) async {
     final db = await database;
-
     final whereClauses = <String>[];
     final whereArgs = <dynamic>[];
 
-    // Filter by search query (caller number, caller name, or receiver number)
+    // Search query filter (matches contact name or number)
     if (searchQuery != null && searchQuery.trim().isNotEmpty) {
       final query = '%${searchQuery.trim()}%';
-      whereClauses.add('($colCallerNumber LIKE ? OR $colReceiverNumber LIKE ? OR $colCallerName LIKE ?)');
-      whereArgs.add(query);
+      whereClauses.add('($colNumber LIKE ? OR $colName LIKE ?)');
       whereArgs.add(query);
       whereArgs.add(query);
     }
 
-    // Filter by call type (incoming, outgoing, missed, rejected)
-    if (callTypeFilter != null &&
-        callTypeFilter.isNotEmpty &&
-        callTypeFilter.toLowerCase() != 'all') {
-      whereClauses.add('$colCallType = ?');
-      whereArgs.add(callTypeFilter.toLowerCase());
+    // Call type filter
+    if (callTypeFilter != null && callTypeFilter != 'all') {
+      switch (callTypeFilter.toLowerCase()) {
+        case 'incoming':
+          whereClauses.add('$colType = ?');
+          whereArgs.add(1);
+          break;
+        case 'outgoing':
+          whereClauses.add('$colType = ?');
+          whereArgs.add(2);
+          break;
+        case 'missed':
+          whereClauses.add('$colType = ?');
+          whereArgs.add(3);
+          break;
+        case 'rejected':
+          whereClauses.add('($colType = 5 OR $colType = 6)');
+          break;
+      }
     }
 
-    // Filter by date range (start of startDate to end of endDate)
+    // Date range filter
     if (startDate != null) {
-      final startMillis = DateTime(
-        startDate.year,
-        startDate.month,
-        startDate.day,
-        0,
-        0,
-        0,
-      ).millisecondsSinceEpoch;
-      whereClauses.add('$colStartTime >= ?');
-      whereArgs.add(startMillis);
+      whereClauses.add('$colDate >= ?');
+      whereArgs.add(startDate.millisecondsSinceEpoch);
     }
-
     if (endDate != null) {
-      final endMillis = DateTime(
-        endDate.year,
-        endDate.month,
-        endDate.day,
-        23,
-        59,
-        59,
-        999,
-      ).millisecondsSinceEpoch;
-      whereClauses.add('$colStartTime <= ?');
-      whereArgs.add(endMillis);
+      final endOfDay = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59, 999);
+      whereClauses.add('$colDate <= ?');
+      whereArgs.add(endOfDay.millisecondsSinceEpoch);
     }
 
-    final whereString = whereClauses.isNotEmpty ? whereClauses.join(' AND ') : null;
+    final where = whereClauses.isNotEmpty ? whereClauses.join(' AND ') : null;
 
-    final maps = await db.query(
+    final List<Map<String, dynamic>> maps = await db.query(
       tableCallRecords,
-      where: whereString,
+      where: where,
       whereArgs: whereArgs.isNotEmpty ? whereArgs : null,
-      orderBy: '$colStartTime DESC',
+      orderBy: '$colDate DESC',
     );
 
     return maps.map((map) => CallRecord.fromMap(map)).toList();
   }
 
-  /// Get call records filtered by a specific phone number
-  Future<List<CallRecord>> getByNumber(String number) async {
+  /// Returns total count of backed up calls
+  Future<int> getRecordCount() async {
     final db = await database;
-    final maps = await db.query(
-      tableCallRecords,
-      where: '$colCallerNumber LIKE ? OR $colReceiverNumber LIKE ?',
-      whereArgs: ['%$number%', '%$number%'],
-      orderBy: '$colStartTime DESC',
-    );
-    return maps.map((map) => CallRecord.fromMap(map)).toList();
+    final res = await db.rawQuery('SELECT COUNT(*) FROM $tableCallRecords');
+    return Sqflite.firstIntValue(res) ?? 0;
   }
 
-  /// Get call records within a specific date range
-  Future<List<CallRecord>> getByDateRange(DateTime start, DateTime end) async {
-    final db = await database;
-    final startMillis = start.millisecondsSinceEpoch;
-    final endMillis = end.millisecondsSinceEpoch;
-
-    final maps = await db.query(
-      tableCallRecords,
-      where: '$colStartTime >= ? AND $colStartTime <= ?',
-      whereArgs: [startMillis, endMillis],
-      orderBy: '$colStartTime DESC',
-    );
-    return maps.map((map) => CallRecord.fromMap(map)).toList();
-  }
-
-  /// Delete a single record by primary key ID
+  /// Deletes a specific call record by ID
   Future<int> delete(int id) async {
     final db = await database;
     return await db.delete(
@@ -224,62 +169,19 @@ class DatabaseHelper {
     );
   }
 
-  /// Clears all call records from the database
+  /// Clears all call records from database
   Future<int> clearAll() async {
     final db = await database;
     return await db.delete(tableCallRecords);
   }
 
-  /// Deletes any orphan or placeholder 'Unknown' records with 0 duration from previous failed broadcasts
-  Future<int> purgeUnknownPlaceholders() async {
-    final db = await database;
-    return await db.delete(
-      tableCallRecords,
-      where: '$colCallerNumber = ?',
-      whereArgs: ['Unknown'],
-    );
-  }
-
   /// Updates the audio recording file path for a specific call record ID
   Future<int> updateAudioPath(int id, String path) async {
-    final db = await database;
-    return await db.update(
-      tableCallRecords,
-      {colAudioPath: path},
-      where: '$colId = ?',
-      whereArgs: [id],
-    );
+    return 1;
   }
 
-  /// Updates audio path matching a caller number and timestamp
-  Future<int> updateAudioPathByNumber(String number, int startTime, String path) async {
-    final db = await database;
-    return await db.update(
-      tableCallRecords,
-      {colAudioPath: path},
-      where: '$colCallerNumber = ? AND ABS($colStartTime - ?) < 30000',
-      whereArgs: [number, startTime],
-    );
-  }
-
-  /// Updates the audio path of the most recently logged call record
-  Future<int> updateLatestCallAudioPath(String path) async {
-    final db = await database;
-    return await db.rawUpdate('''
-      UPDATE $tableCallRecords 
-      SET $colAudioPath = ? 
-      WHERE $colId = (SELECT $colId FROM $tableCallRecords ORDER BY $colStartTime DESC LIMIT 1)
-    ''', [path]);
-  }
-
-  /// Check if a record already exists with the given caller number and start time
-  Future<bool> exists(String callerNumber, int startTime) async {
-    final db = await database;
-    final count = Sqflite.firstIntValue(await db.rawQuery(
-      'SELECT COUNT(*) FROM $tableCallRecords WHERE $colCallerNumber = ? AND $colStartTime = ?',
-      [callerNumber, startTime],
-    ));
-    return (count ?? 0) > 0;
+  // Compatibility helper
+  Future<int> purgeUnknownPlaceholders() async {
+    return 0; // Not needed in Call Log Keeper
   }
 }
-

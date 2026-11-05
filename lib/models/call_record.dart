@@ -1,164 +1,165 @@
 import 'package:intl/intl.dart';
 
-/// CallRecord model represents an incoming, outgoing, missed, or rejected call.
+/// CallRecord model represents a transparent call history entry in Call Log Keeper.
+/// Matches SQLite table: call_records (number, name, type, date, duration)
 class CallRecord {
   final int? id;
-  final String callerNumber;
-  final String? callerName;
-  final String receiverNumber;
-  final String callType; // 'incoming', 'outgoing', 'missed', 'rejected'
-  final String callStatus; // 'ringing', 'connected', 'ended'
-  final int startTime; // epoch milliseconds
-  final int endTime; // epoch milliseconds
-  final int durationSeconds;
-  final String? simSlot;
+  final String number;
+  final String? name;
+  final int type; // 1: Incoming, 2: Outgoing, 3: Missed, 5: Rejected, 6: Blocked
+  final int date; // Epoch timestamp in milliseconds
+  final int duration; // Call talk duration in seconds
   final String? audioPath;
-  final int createdAt; // epoch milliseconds
 
   CallRecord({
     this.id,
-    required this.callerNumber,
-    this.callerName,
-    required this.receiverNumber,
-    required this.callType,
-    required this.callStatus,
-    required this.startTime,
-    required this.endTime,
-    required this.durationSeconds,
-    this.simSlot,
+    required this.number,
+    this.name,
+    required this.type,
+    required this.date,
+    required this.duration,
     this.audioPath,
-    required this.createdAt,
   });
 
   /// Factory constructor to deserialize from SQLite map
   factory CallRecord.fromMap(Map<String, dynamic> map) {
     return CallRecord(
       id: map['id'] as int?,
-      callerNumber: map['caller_number'] as String? ?? 'Unknown',
-      callerName: map['caller_name'] as String?,
-      receiverNumber: map['receiver_number'] as String? ?? 'Unknown',
-      callType: (map['call_type'] as String? ?? 'incoming').toLowerCase(),
-      callStatus: (map['call_status'] as String? ?? 'ended').toLowerCase(),
-      startTime: map['start_time'] as int? ?? 0,
-      endTime: map['end_time'] as int? ?? 0,
-      durationSeconds: map['duration_seconds'] as int? ?? 0,
-      simSlot: map['sim_slot'] as String?,
+      number: map['number'] as String? ?? (map['caller_number'] as String? ?? 'Unknown'),
+      name: map['name'] as String? ?? map['caller_name'] as String?,
+      type: _parseType(map['type'] ?? map['call_type']),
+      date: (map['date'] as int?) ?? (map['start_time'] as int?) ?? 0,
+      duration: (map['duration'] as int?) ?? (map['duration_seconds'] as int?) ?? 0,
       audioPath: map['audio_path'] as String?,
-      createdAt: map['created_at'] as int? ?? DateTime.now().millisecondsSinceEpoch,
     );
+  }
+
+  static int _parseType(dynamic val) {
+    if (val is int) return val;
+    if (val is String) {
+      switch (val.toLowerCase()) {
+        case 'incoming':
+          return 1;
+        case 'outgoing':
+          return 2;
+        case 'missed':
+          return 3;
+        case 'rejected':
+        case 'blocked':
+          return 5;
+        default:
+          return 1;
+      }
+    }
+    return 1;
   }
 
   /// Converts the record to an SQLite map
   Map<String, dynamic> toMap() {
-    final map = <String, dynamic>{
-      'caller_number': callerNumber,
-      'caller_name': callerName,
-      'receiver_number': receiverNumber,
-      'call_type': callType.toLowerCase(),
-      'call_status': callStatus.toLowerCase(),
-      'start_time': startTime,
-      'end_time': endTime,
-      'duration_seconds': durationSeconds,
-      'sim_slot': simSlot,
-      'audio_path': audioPath,
-      'created_at': createdAt,
+    return {
+      if (id != null) 'id': id,
+      'number': number,
+      'name': name,
+      'type': type,
+      'date': date,
+      'duration': duration,
     };
-    if (id != null) {
-      map['id'] = id;
+  }
+
+  // --- Convenience Getters ---
+  String get callerNumber => number;
+  String? get callerName => name;
+  int get startTime => date;
+  int get endTime => date + (duration * 1000);
+  int get durationSeconds => duration;
+  String get receiverNumber => 'My Device';
+  String? get simSlot => null;
+
+  bool get isIncoming => type == 1;
+  bool get isOutgoing => type == 2;
+  bool get isMissed => type == 3;
+  bool get isRejected => type == 5 || type == 6;
+
+  String get callType {
+    if (isIncoming) return 'incoming';
+    if (isOutgoing) return 'outgoing';
+    if (isMissed) return 'missed';
+    if (isRejected) return 'rejected';
+    return 'incoming';
+  }
+
+  String get callTypeLabel {
+    switch (type) {
+      case 1:
+        return 'Incoming';
+      case 2:
+        return 'Outgoing';
+      case 3:
+        return 'Missed';
+      case 5:
+        return 'Rejected';
+      case 6:
+        return 'Blocked';
+      default:
+        return 'Call';
     }
-    return map;
   }
 
-  CallRecord copyWith({
-    int? id,
-    String? callerNumber,
-    String? callerName,
-    String? receiverNumber,
-    String? callType,
-    String? callStatus,
-    int? startTime,
-    int? endTime,
-    int? durationSeconds,
-    String? simSlot,
-    String? audioPath,
-    int? createdAt,
-  }) {
-    return CallRecord(
-      id: id ?? this.id,
-      callerNumber: callerNumber ?? this.callerNumber,
-      callerName: callerName ?? this.callerName,
-      receiverNumber: receiverNumber ?? this.receiverNumber,
-      callType: callType ?? this.callType,
-      callStatus: callStatus ?? this.callStatus,
-      startTime: startTime ?? this.startTime,
-      endTime: endTime ?? this.endTime,
-      durationSeconds: durationSeconds ?? this.durationSeconds,
-      simSlot: simSlot ?? this.simSlot,
-      audioPath: audioPath ?? this.audioPath,
-      createdAt: createdAt ?? this.createdAt,
-    );
+  /// Formatted date/time: e.g. "Nov 5, 2026 • 11:45 AM"
+  String get formattedDate {
+    if (date <= 0) return 'Unknown Date';
+    final dt = DateTime.fromMillisecondsSinceEpoch(date);
+    return DateFormat('MMM d, y • h:mm a').format(dt);
   }
 
-  /// Best display name: contact name if known, else caller number, else 'Unknown'
-  String get displayName {
-    if (callerName != null && callerName!.trim().isNotEmpty && callerName!.trim().toLowerCase() != 'unknown') {
-      return callerName!.trim();
+  String get formattedShortTime => shortDate;
+
+  bool get hasContactName => name != null && name!.trim().isNotEmpty && name != 'Unknown' && name != number;
+
+  String get displayName => displayTitle;
+
+  bool get hasAudio => audioPath != null && audioPath!.trim().isNotEmpty;
+  String get status => isMissed || isRejected ? 'missed' : 'ended';
+  String get callStatus => status;
+
+  /// Short date for lists: e.g. "Today 11:45 AM" or "Nov 5"
+  String get shortDate {
+    if (date <= 0) return '';
+    final dt = DateTime.fromMillisecondsSinceEpoch(date);
+    final now = DateTime.now();
+    if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
+      return 'Today, ${DateFormat('h:mm a').format(dt)}';
     }
-    if (callerNumber.trim().isNotEmpty && callerNumber.trim().toLowerCase() != 'unknown') {
-      return callerNumber.trim();
+    final yesterday = now.subtract(const Duration(days: 1));
+    if (dt.year == yesterday.year && dt.month == yesterday.month && dt.day == yesterday.day) {
+      return 'Yesterday, ${DateFormat('h:mm a').format(dt)}';
     }
-    return 'Unknown';
+    return DateFormat('MMM d, h:mm a').format(dt);
   }
 
-  /// Whether a recognized contact name is available separate from the phone number
-  bool get hasContactName {
-    return callerName != null &&
-        callerName!.trim().isNotEmpty &&
-        callerName!.trim().toLowerCase() != 'unknown' &&
-        callerName!.trim() != callerNumber.trim();
-  }
-
-  /// Formatted duration in "MM:SS" or "Xh Ym Zs"
+  /// Formatted duration string (e.g. "02:15" or "1h 10m" or "Missed")
   String get formattedDuration {
-    if (durationSeconds <= 0) return '0s';
-    final hours = durationSeconds ~/ 3600;
-    final minutes = (durationSeconds % 3600) ~/ 60;
-    final seconds = durationSeconds % 60;
+    if (isMissed || isRejected) return callTypeLabel;
+    if (duration == 0) return '0s';
+
+    final minutes = duration ~/ 60;
+    final seconds = duration % 60;
+    final hours = minutes ~/ 60;
 
     if (hours > 0) {
-      return '${hours}h ${minutes}m ${seconds}s';
-    } else if (minutes > 0) {
+      return '${hours}h ${minutes % 60}m ${seconds}s';
+    }
+    if (minutes > 0) {
       return '${minutes}m ${seconds}s';
-    } else {
-      return '${seconds}s';
     }
+    return '${seconds}s';
   }
 
-  /// Formatted start date & time (e.g. "Oct 30, 2026, 04:15 PM")
-  String get formattedDateTime {
-    if (startTime <= 0) return 'Unknown';
-    final dt = DateTime.fromMillisecondsSinceEpoch(startTime);
-    return DateFormat('MMM dd, yyyy  hh:mm a').format(dt);
-  }
-
-  /// Formatted relative or short time
-  String get formattedShortTime {
-    if (startTime <= 0) return '';
-    final dt = DateTime.fromMillisecondsSinceEpoch(startTime);
-    final now = DateTime.now();
-
-    if (now.year == dt.year && now.month == dt.month && now.day == dt.day) {
-      return DateFormat('hh:mm a').format(dt);
-    } else if (now.year == dt.year) {
-      return DateFormat('MMM dd, hh:mm a').format(dt);
+  /// Display name preferring contact name over raw phone number
+  String get displayTitle {
+    if (name != null && name!.trim().isNotEmpty && name != 'Unknown') {
+      return name!.trim();
     }
-    return DateFormat('MM/dd/yy hh:mm a').format(dt);
+    return number.isNotEmpty ? number : 'Unknown Caller';
   }
-
-  /// Helper for UI icons & colors
-  bool get isIncoming => callType == 'incoming';
-  bool get isOutgoing => callType == 'outgoing';
-  bool get isMissed => callType == 'missed';
-  bool get isRejected => callType == 'rejected';
 }
-

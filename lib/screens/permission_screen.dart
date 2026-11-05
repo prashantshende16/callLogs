@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/permission_provider.dart';
 
-/// PermissionScreen displays a user-friendly explanation of all required
-/// permissions on first launch, guiding the user to grant them or open settings.
+/// PermissionScreen displays a transparent, user-friendly explanation of all
+/// permissions required by Call Log Keeper to back up personal call history.
 class PermissionScreen extends StatefulWidget {
   final VoidCallback onPermissionsGranted;
 
@@ -32,7 +32,6 @@ class _PermissionScreenState extends State<PermissionScreen> with WidgetsBinding
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Re-check permissions when returning from system Settings
       final permProvider = Provider.of<PermissionProvider>(context, listen: false);
       permProvider.checkPermissions().then((_) {
         if (permProvider.areAllGranted) {
@@ -47,147 +46,168 @@ class _PermissionScreenState extends State<PermissionScreen> with WidgetsBinding
     final permProvider = Provider.of<PermissionProvider>(context);
 
     return Scaffold(
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 16),
-              // Header Icon
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).primaryColor.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
+              const SizedBox(height: 12),
+              // App Brand Header
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2563EB).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(
+                      Icons.history_edu_rounded,
+                      size: 32,
+                      color: Color(0xFF2563EB),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Call Log Keeper',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      Text(
+                        'Transparent Personal Call Backup',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+
+              const Text(
+                'Permissions & Transparency',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.3,
+                  color: Color(0xFF0F172A),
                 ),
-                child: Icon(
-                  Icons.security_rounded,
-                  size: 40,
-                  color: Theme.of(context).primaryColor,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'To automatically back up your call records in the background and display contact names, Call Log Keeper requests the following standard Android permissions:',
+                style: TextStyle(
+                  fontSize: 13.5,
+                  color: Color(0xFF475569),
+                  height: 1.4,
                 ),
               ),
               const SizedBox(height: 20),
 
-              // Title & Subtitle
-              const Text(
-                'Permissions Required',
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: -0.5,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'To automatically monitor incoming calls and store accurate call records in your local SQLite database, Android Services requires the following permissions:',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey.shade700,
-                  height: 1.4,
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Permission Explanations List
+              // Permissions List
               Expanded(
                 child: ListView(
                   children: [
                     _buildPermissionItem(
-                      icon: Icons.phone_in_talk,
-                      title: 'Phone State & Numbers',
+                      icon: Icons.call_rounded,
+                      title: 'Call Logs (READ_CALL_LOG)',
                       description:
-                          'Detects when your phone rings, answers, or ends calls, and reads SIM/hardware phone numbers.',
-                      isGranted: permProvider.areAllGranted,
+                          'Reads your confirmed incoming, outgoing, and missed call history to create your local backup.',
+                      isGranted: permProvider.isCallLogGranted,
                     ),
+                    const SizedBox(height: 12),
                     _buildPermissionItem(
-                      icon: Icons.history,
-                      title: 'Call Log Access',
+                      icon: Icons.phone_in_talk_rounded,
+                      title: 'Phone State (READ_PHONE_STATE)',
                       description:
-                          'Reads finalized call duration, call types (missed/rejected), and syncs call history.',
-                      isGranted: permProvider.areAllGranted,
+                          'Detects when a phone call terminates so Call Log Keeper can sync the newly completed call.',
+                      isGranted: permProvider.isPhoneGranted,
                     ),
+                    const SizedBox(height: 12),
                     _buildPermissionItem(
-                      icon: Icons.notifications_active_outlined,
-                      title: 'Notifications (Android 13+)',
+                      icon: Icons.contacts_rounded,
+                      title: 'Contacts (READ_CONTACTS)',
                       description:
-                          'Shows a persistent foreground service notification ensuring 24/7 background call monitoring.',
-                      isGranted: permProvider.areAllGranted,
+                          'Resolves contact names for phone numbers so you see familiar names in your backup.',
+                      isGranted: permProvider.isContactsGranted,
                     ),
+                    const SizedBox(height: 12),
                     _buildPermissionItem(
-                      icon: Icons.mic_outlined,
-                      title: 'Microphone (Voice Recording)',
+                      icon: Icons.notifications_active_rounded,
+                      title: 'Visible Notifications (POST_NOTIFICATIONS)',
                       description:
-                          'Records call audio directly when a call is connected so you can listen back to conversations.',
-                      isGranted: permProvider.areAllGranted,
+                          'Displays the persistent, visible ongoing notification required by Android while monitoring is active.',
+                      isGranted: permProvider.isNotificationGranted,
                     ),
-                    _buildPermissionItem(
-                      icon: Icons.folder_copy_outlined,
-                      title: 'Storage / Recording Backup Access',
-                      description:
-                          'Enables copying native Vivo and Realme call recordings into the app storage for safe backup.',
-                      isGranted: permProvider.areAllGranted,
+                    const SizedBox(height: 16),
+
+                    // Privacy notice box
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: const Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.shield_outlined, size: 20, color: Color(0xFF2563EB)),
+                          SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              '100% Local Storage: All call records are saved strictly on this device in call_log_keeper.db. No data is ever sent to any server.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF334155),
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
               ),
 
-              // Bottom Actions
-              if (permProvider.isPermanentlyDenied) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.shade50,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.amber.shade300),
+              // Action Button
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    await permProvider.requestAllPermissions();
+                    if (permProvider.areAllGranted) {
+                      widget.onPermissionsGranted();
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2563EB),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.info_outline, color: Colors.amber.shade800),
-                      const SizedBox(width: 10),
-                      const Expanded(
-                        child: Text(
-                          'Some permissions are permanently denied. Please enable them in App Settings.',
-                          style: TextStyle(fontSize: 13, color: Colors.black87),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.settings),
-                    label: const Text('Open App Settings', style: TextStyle(fontSize: 16)),
-                    onPressed: () => permProvider.openSettings(),
+                  child: const Text(
+                    'Grant Permissions & Start Backup',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                 ),
-              ] else ...[
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: FilledButton(
-                    onPressed: permProvider.isLoading
-                        ? null
-                        : () async {
-                            final granted = await permProvider.requestPermissions();
-                            if (granted) {
-                              widget.onPermissionsGranted();
-                            }
-                          },
-                    child: permProvider.isLoading
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                          )
-                        : const Text('Grant Permissions', style: TextStyle(fontSize: 16)),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 8),
+              ),
+              const SizedBox(height: 10),
             ],
           ),
         ),
@@ -202,46 +222,48 @@ class _PermissionScreenState extends State<PermissionScreen> with WidgetsBinding
     required bool isGranted,
   }) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        color: isGranted ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isGranted ? const Color(0xFFBBF7D0) : const Color(0xFFE2E8F0),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: isGranted ? Colors.green.shade50 : Colors.blue.shade50,
+              color: isGranted ? const Color(0xFF22C55E).withValues(alpha: 0.15) : const Color(0xFF64748B).withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
             child: Icon(
-              icon,
+              isGranted ? Icons.check_circle_rounded : icon,
               size: 20,
-              color: isGranted ? Colors.green.shade700 : Colors.blue.shade700,
+              color: isGranted ? const Color(0xFF16A34A) : const Color(0xFF475569),
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
-                    fontSize: 15,
+                  style: TextStyle(
+                    fontSize: 14.5,
                     fontWeight: FontWeight.bold,
+                    color: isGranted ? const Color(0xFF15803D) : const Color(0xFF0F172A),
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   description,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: Colors.grey.shade600,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF64748B),
                     height: 1.3,
                   ),
                 ),
@@ -253,4 +275,3 @@ class _PermissionScreenState extends State<PermissionScreen> with WidgetsBinding
     );
   }
 }
-

@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'providers/auth_provider.dart';
 import 'providers/call_record_provider.dart';
 import 'providers/permission_provider.dart';
 import 'providers/settings_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/permission_screen.dart';
-import 'screens/pin_lock_screen.dart';
 import 'services/native_call_service.dart';
 
 void main() async {
@@ -18,34 +16,37 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => PermissionProvider()),
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
         ChangeNotifierProvider(create: (_) => CallRecordProvider()),
       ],
-      child: const AndroidServicesApp(),
+      child: const CallLogKeeperApp(),
     ),
   );
 }
 
-class AndroidServicesApp extends StatelessWidget {
-  const AndroidServicesApp({Key? key}) : super(key: key);
+class CallLogKeeperApp extends StatelessWidget {
+  const CallLogKeeperApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Android Services',
+      title: 'Call Log Keeper',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1E3A8A), // Deep Slate Navy
-          primary: const Color(0xFF1E3A8A),
+          seedColor: const Color(0xFF2563EB), // Vibrant Blue
+          primary: const Color(0xFF2563EB),
+          surface: Colors.white,
           brightness: Brightness.light,
         ),
+        scaffoldBackgroundColor: const Color(0xFFF8FAFC),
         appBarTheme: const AppBarTheme(
           centerTitle: false,
           elevation: 0,
+          backgroundColor: Colors.white,
+          foregroundColor: Color(0xFF0F172A),
         ),
       ),
       home: const RootGatekeeper(),
@@ -54,38 +55,25 @@ class AndroidServicesApp extends StatelessWidget {
 }
 
 /// RootGatekeeper decides whether to show:
-/// 1. 4-Digit Password setup (first app install)
-/// 2. 4-Digit Password unlock (subsequent launches)
-/// 3. Permission onboarding screen
-/// 4. Main HomeScreen
+/// 1. Permission onboarding screen with full transparency rationale
+/// 2. Main HomeScreen (Call history backup list)
 class RootGatekeeper extends StatelessWidget {
   const RootGatekeeper({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
     final permProvider = Provider.of<PermissionProvider>(context);
 
-    if (authProvider.isLoading || permProvider.isLoading) {
+    if (permProvider.isLoading) {
       return const Scaffold(
-        backgroundColor: Color(0xFF0F172A),
+        backgroundColor: Colors.white,
         body: Center(
-          child: CircularProgressIndicator(color: Color(0xFF3B82F6)),
+          child: CircularProgressIndicator(color: Color(0xFF2563EB)),
         ),
       );
     }
 
-    // 1. First install: Ask to set 4-digit PIN (entered twice)
-    if (!authProvider.isPinConfigured) {
-      return const PinLockScreen(mode: PinScreenMode.setup);
-    }
-
-    // 2. Normal launch: Authenticate with 4-digit PIN
-    if (!authProvider.isAuthenticated) {
-      return const PinLockScreen(mode: PinScreenMode.unlock);
-    }
-
-    // 3. Permissions check
+    // 1. If required permissions are not granted, show transparent onboarding
     if (!permProvider.areAllGranted) {
       return PermissionScreen(
         onPermissionsGranted: () {
@@ -94,8 +82,7 @@ class RootGatekeeper extends StatelessWidget {
       );
     }
 
-    // 4. Everything authenticated and granted
+    // 2. Normal launch: Open HomeScreen directly
     return const HomeScreen();
   }
 }
-

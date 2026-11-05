@@ -1,185 +1,156 @@
-# Android Services — Comprehensive Project Analysis & Architecture Report
+# Call Log Keeper — Project Architecture & Implementation Document
 
 ---
 
 ## 1. Executive Summary
 
-**Android Services** (internal project code: `AccessControl` / `call_logger`) is a specialized, resilient Android Call Monitoring, Logging, and Call Audio Management system built using **Flutter** and **Native Android Kotlin**. 
+**Call Log Keeper** is a transparent, privacy-first personal call-history backup application built using **Flutter** and **Native Android Kotlin**.
 
-The application is disguised under the benign utility identity **"Android Services"** (with a native system gear icon) and operates as an automated 24/7 background call-logging and local audio-archival platform.
-
-### Primary Problem Statement Solved
-In standard Android implementations, if an app relies solely on user-space Flutter execution or simple call-log reading:
-1. Calls made or received while the app is **closed / terminated / swiped from Recents** are missed.
-2. If the user deletes a call from the device's native dialer (Phone app) within seconds of hanging up, standard Flutter apps never capture the call details or recording.
-3. Outgoing call numbers are hidden by Android 10+ privacy policies during active dialing (`EXTRA_INCOMING_NUMBER` is null for outgoing calls).
-4. Native call recording files stored in vendor-specific directories (Samsung, Realme, Xiaomi) are disconnected from dialer logs.
-
-**Android Services** overcomes all of these hurdles with a multi-layered native Kotlin daemon, SQLite synchronization engine, wake locks, and automated OEM audio matching.
+The application is designed specifically for personal record-keeping, diagnostics, and transparent background backup:
+- **Transparent Foreground Service**: Operates with a visible, persistent notification ("Call Log Keeper is running — Monitoring calls to keep your backup up to date") in strict adherence to Google Play foreground service policies (`FOREGROUND_SERVICE_PHONE_CALL`).
+- **No App-Hiding or PIN Locks**: 100% transparent personal utility without cloaked icons, stealth mode, or access gatekeepers.
+- **Direct Local SQLite Storage**: Backs up all confirmed call records locally on the user's device in `call_log_keeper.db`. Zero cloud transmission or external tracking.
+- **Native Call End Detection**: Detects call termination via `TelephonyCallback` (Android 12+) and `PhoneStateListener` (pre-Android 12), waits a standard ~800ms delay for system `CallLog.Calls` to populate, and stores the confirmed record.
 
 ---
 
-## 2. System Architecture
+## 2. System Architecture & Flow
 
 ```mermaid
 flowchart TD
-    subgraph DeviceOS["Android System & Telephony Stack"]
-        GSM["Cellular / GSM Network"] --> TM["TelephonyManager / Telecom"]
-        TM -->|PHONE_STATE Broadcast| CSR["CallStateReceiver (Static BroadcastReceiver)"]
-        TM -->|Flush call at hangup| CL["System CallLog (CallLog.Calls)"]
-        DIALER["Native OEM Phone Dialer"] -->|Record Audio| STORAGE["OEM Storage (/Recordings/Call, etc.)"]
+    subgraph AndroidTelephony["Android System & Telephony Stack"]
+        GSM["Cellular / GSM Hardware"] --> TM["TelephonyManager"]
+        TM -->|TelephonyCallback / CallStateListener| CMS["CallMonitorService (Foreground Service)"]
+        TM -->|Write finalized call at hangup| CL["System CallLog (CallLog.Calls)"]
+        CONTACTS["Android Contacts Provider"]
     end
 
-    subgraph NativeDaemon["Android Services Native Background Layer (Kotlin)"]
-        CMS["CallMonitorService (Foreground Service)"]
-        CO["CallLog ContentObserver"]
-        CSR -->|Intercept EXTRA_STATE_IDLE| HCE["handleCallEnded()"]
-        HCE -->|Hold CPU Awake| WL["PowerManager WakeLock"]
-        HCE -->|Keep Process Alive| GA["goAsync() Background Thread"]
-        GA -->|Poll with referenceEndTime| SYNC["NativeDatabaseHelper.syncLatestFromSystemCallLog"]
-        CO -->|Real-time change trigger| SYNC
-        SYNC <-->|Direct SQL Read/Write| DB[("Local SQLite Database (call_logger.db)")]
-        NAS["NativeAudioScanner"] -->|Scan & Match| STORAGE
-        NAS -->|Link audio_path| DB
+    subgraph NativeLayer["Call Log Keeper Native Layer (Kotlin)"]
+        CMS -->|Ongoing Notification| NOTIF["Visible Notification: 'Call Log Keeper is running'"]
+        CMS -->|CALL_STATE_IDLE after Ringing/Offhook| SYNC["syncLatestCallFromLog() (after 800ms)"]
+        SYNC -->|Query latest completed record| CL
+        SYNC -->|Resolve Display Name| CONTACTS
+        SYNC -->|Insert record| NDB["NativeDatabaseHelper (call_log_keeper.db)"]
+        CMS -->|notifyFlutterCallLogged()| MC["MethodChannel ('com.example.call_logger/monitor')"]
     end
 
-    subgraph FlutterApp["Flutter Application Layer (Dart)"]
-        GATE["RootGatekeeper"] --> PIN["4-Digit PIN Lock Screen\n(Master Code: 9876)"]
-        PIN --> PERM["PermissionScreen"]
-        PERM --> HOME["HomeScreen (Material 3 UI)"]
-        HOME --> STATS["Stats Bar (Total, Incoming, Outgoing, Missed, Rejected)"]
-        HOME --> LIST["Call Records List (Real-time & Filtered)"]
-        HOME --> PLAYER["Native Audio Player (Waveform, Seek, Play/Pause)"]
-        MC["MethodChannel / EventChannel"] <--> CSR
-        MC <--> CMS
-        DB <-->|Read records on launch| FLUTTER_DB["DatabaseHelper (Sqflite)"]
+    subgraph FlutterUI["Flutter Application (Dart)"]
+        ROOT["RootGatekeeper"] -->|Permissions not granted| PERM["PermissionScreen (Transparent Rationale)"]
+        ROOT -->|Permissions granted| HOME["HomeScreen (Material 3 Dashboard)"]
+        HOME --> STATS["Stats Bar (Total, Incoming, Outgoing, Missed)"]
+        HOME --> LIST["Call Records List (Real-time updates)"]
+        HOME --> SETTINGS["SettingsScreen (Service Toggle & Manual Sync)"]
+        SETTINGS -->|startMonitoring / stopMonitoring| MC
+        MC -->|startForegroundService / stopService| CMS
+        HOME <-->|Read & Filter records| FDB["DatabaseHelper (Sqflite)"]
+        FDB <-->|Read / Write call_records| NDB
     end
 ```
 
 ---
 
-## 3. Key Components & Implementation Details
+## 3. Concrete Implementation Specifications
 
-### 3.1. Security & Gatekeeper System
-- **PIN Setup Mode**: On first installation, users are prompted to set and confirm a 4-digit numeric PIN.
-- **PIN Unlock Mode**: On subsequent app launches, entry requires the configured 4-digit PIN.
-- **Master Reset Code (`9876`)**: If the user forgets their PIN, entering `9876` immediately unlocks the app and opens the PIN reset dialogue.
-- **Component Files**:
-  - `lib/screens/pin_lock_screen.dart`
-  - `lib/providers/auth_provider.dart`
-  - `lib/services/auth_service.dart`
+### 3.1. Call State Detection — `CallMonitorService.kt`
+- **Class**: [`CallMonitorService`](file:///home/dev04/datagrid/flutter_project/AccessControl/android/app/src/main/kotlin/com/example/call_logger/CallMonitorService.kt)
+- **Foreground Service Type**: `android:foregroundServiceType="phoneCall"`
+- **Required Permission**: `android.permission.FOREGROUND_SERVICE_PHONE_CALL`
+- **Notification**:
+  - Channel ID: `call_log_keeper_channel`
+  - Channel Name: `Call Log Keeper`
+  - Title: `Call Log Keeper is running`
+  - Text: `Monitoring calls to keep your backup up to date`
+  - Small Icon: `ic_call_service`
+- **Telephony Callback**:
+  - Android 12+ (API 31+): `telephonyManager.registerTelephonyCallback(mainExecutor, CallStateListener)`
+  - Pre-Android 12: `telephonyManager.listen(PhoneStateListener, LISTEN_CALL_STATE)`
+- **State Transition**:
+  - `RINGING` -> sets `wasRinging = true`
+  - `OFFHOOK` -> call answered or outgoing call connected
+  - `IDLE` -> when transitioning from non-IDLE state, waits 800ms for system `CallLog.Calls` to populate, calls `syncLatestCallFromLog(wasRinging)`, and notifies Flutter.
 
-### 3.2. 24/7 Resilient Call Capture (The Closed-App Fix)
-- **Direct `IDLE` State Intercept**: In `CallStateReceiver.kt`, `EXTRA_STATE_IDLE` is handled directly in `onReceive()` without depending on in-memory state history. This ensures that when Android wakes a fresh process for a closed app, the call-end event is never dropped.
-- **`goAsync()` & `PowerManager.WakeLock`**: Extends receiver execution window up to 10 seconds and prevents CPU deep sleep even if the phone screen turns off immediately upon hanging up.
-- **Reference-Time Polling Loop**:
-  - Android Telecom takes ~300ms to 800ms to flush completed call details into `CallLog.Calls`.
-  - The loop polls `CallLog.Calls` every 250ms for up to 5.0 seconds.
-  - Matches calls where `Math.abs(referenceEndTime - (logDate + logDur * 1000)) < 45000`.
-  - Does **not** exit prematurely on old calls; waits specifically for the call that just concluded.
-  - Once captured, the record is immediately written to `call_logger.db` via `NativeDatabaseHelper`.
-- **Anti-Deletion Guarantee**: Even if the user hangs up, opens the phone dialer, and deletes the call within 2–3 seconds, our background worker has already written it to SQLite within 500–700ms.
+### 3.2. Reading Confirmed Call Record — `syncLatestCallFromLog`
+```kotlin
+private fun syncLatestCallFromLog(wasAnswered: Boolean) {
+    val cursor = contentResolver.query(
+        CallLog.Calls.CONTENT_URI, null, null, null,
+        "${CallLog.Calls.DATE} DESC LIMIT 1"
+    )
+    cursor?.use {
+        if (it.moveToFirst()) {
+            val number = it.getString(it.getColumnIndexOrThrow(CallLog.Calls.NUMBER))
+            val type = it.getInt(it.getColumnIndexOrThrow(CallLog.Calls.TYPE))
+            val duration = it.getLong(it.getColumnIndexOrThrow(CallLog.Calls.DURATION))
+            val date = it.getLong(it.getColumnIndexOrThrow(CallLog.Calls.DATE))
+            val name = resolveContactName(number)
+            NativeDatabaseHelper(this).insertCallRecord(number, name, type, date, duration)
+        }
+    }
+}
+```
 
-### 3.3. Dual Database Access (Native Kotlin + Flutter Sqflite)
-Both layers share the exact same SQLite database file on disk:
-- Path: `/data/user/0/com.example.call_logger/databases/call_logger.db`
-- **Native Helper**: `android/app/src/main/kotlin/com/example/call_logger/NativeDatabaseHelper.kt`
-- **Dart Helper**: `lib/services/database_helper.dart`
+### 3.3. SQLite Schema & Helpers — `call_log_keeper.db`
+- **Database Name**: `call_log_keeper.db` (Version 1)
+- **Table Name**: `call_records`
+- **Schema**:
+```sql
+CREATE TABLE IF NOT EXISTS call_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    number TEXT NOT NULL,
+    name TEXT,
+    type INTEGER NOT NULL,
+    date INTEGER NOT NULL,
+    duration INTEGER NOT NULL,
+    UNIQUE(number, date) ON CONFLICT IGNORE
+);
+CREATE INDEX IF NOT EXISTS idx_call_records_date ON call_records (date DESC);
+CREATE INDEX IF NOT EXISTS idx_call_records_number ON call_records (number);
+```
+- **Call Type Mapping**:
+  - `1`: Incoming
+  - `2`: Outgoing
+  - `3`: Missed
+  - `5`: Rejected
+  - `6`: Blocked
 
-#### Database Schema (`call_records` table, v3):
-| Column Name | Type | Description |
-| :--- | :--- | :--- |
-| `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | Unique call record identifier |
-| `caller_number` | `TEXT NOT NULL` | Dialed or incoming phone number |
-| `caller_name` | `TEXT` | Contact name resolved from `ContactsContract` |
-| `receiver_number` | `TEXT NOT NULL` | Target SIM or hardware phone number |
-| `call_type` | `TEXT NOT NULL` | `incoming`, `outgoing`, `missed`, `rejected` |
-| `call_status` | `TEXT NOT NULL` | `ended`, `missed`, `rejected` |
-| `start_time` | `INTEGER NOT NULL` | Epoch timestamp (ms) call started |
-| `end_time` | `INTEGER NOT NULL` | Epoch timestamp (ms) call ended |
-| `duration_seconds` | `INTEGER NOT NULL` | Call talk duration in seconds |
-| `sim_slot` | `TEXT` | Associated SIM identifier (e.g. `SIM 1`) |
-| `audio_path` | `TEXT` | File path to matched native audio recording |
-| `created_at` | `INTEGER NOT NULL` | Record insertion timestamp (ms) |
+### 3.4. Manifest Entries — `AndroidManifest.xml`
+```xml
+<uses-permission android:name="android.permission.READ_CALL_LOG" />
+<uses-permission android:name="android.permission.READ_PHONE_STATE" />
+<uses-permission android:name="android.permission.READ_CONTACTS" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-*Unique Constraint*: `UNIQUE(caller_number, start_time) ON CONFLICT IGNORE/REPLACE`
+<service
+    android:name=".CallMonitorService"
+    android:enabled="true"
+    android:exported="false"
+    android:foregroundServiceType="phoneCall" />
+```
 
-### 3.4. Native Call Audio Scanner & Formats
-`NativeAudioScanner.kt` traverses OEM storage directories and MediaStore records to match call audio:
-- **Supported Formats**: `.m4a`, `.amr`, `.wav`, `.mp3`, `.3gp`, `.aac`
-- **OEM Directories Scanned**:
-  - **Samsung One UI**: `/storage/emulated/0/Recordings/Call`, `/storage/emulated/0/Call`
-  - **Realme / Oppo / OnePlus (ColorOS)**: `/storage/emulated/0/Recordings`, `/storage/emulated/0/Record/Call`
-  - **Xiaomi (MIUI / HyperOS)**: `/storage/emulated/0/MIUI/sound_recorder/call_rec`
-  - **Google Pixel / Stock**: MediaStore Audio queries + `ACTION_SEND` shared intent receiver
-- **Fuzzy Proximity Matching**: Matches normalized phone numbers and checks file modification time within `[callStartTime - 60s, callEndTime + 60s]`.
-
-### 3.5. Frontend UI & UX
-- **Branding**: Disguised as "Android Services" with native system gear iconography (`ic_call_service`).
-- **Stats Dashboard**: Live status counters for Total, Incoming, Outgoing, Missed, Rejected calls, and Total Talk Duration.
-- **Search & Filtering**:
-  - Live search by contact name or phone number.
-  - Modal bottom sheet filter for Call Type (`All`, `Incoming`, `Outgoing`, `Missed`, `Rejected`).
-  - Date Range picker filter.
-- **In-App Audio Player**:
-  - Custom audio bar with Play, Pause, Resume, Seek slider, and duration countdown.
-  - Native playback delegated through `MediaPlayer` in `MainActivity.kt`.
+### 3.5. Flutter UI & Features
+1. **Onboarding & Permissions (`PermissionScreen`)**:
+   - Clear breakdown of why each permission is needed (`READ_CALL_LOG`, `READ_PHONE_STATE`, `READ_CONTACTS`, `POST_NOTIFICATIONS`).
+   - 100% local storage statement.
+2. **Main Dashboard (`HomeScreen`)**:
+   - App Bar with dynamic active/paused monitoring status badge.
+   - Summary stats counters (Total, Incoming, Outgoing, Missed).
+   - Search bar (by name or number) & quick filters (`All`, `Incoming`, `Outgoing`, `Missed`).
+   - Pull-to-refresh to manually sync device call logs.
+   - Clean list tile displaying contact avatar, formatted call type badge, date/time, and talk duration.
+3. **Settings (`SettingsScreen`)**:
+   - SwitchListTile to start/stop the ongoing `CallMonitorService` via MethodChannel.
+   - Manual one-tap call history sync button.
+   - Export backup to CSV.
+   - Data clearing and privacy notice.
 
 ---
 
-## 4. File Structure & Responsibilities
+## 4. Privacy & Compliance
 
-```
-AccessControl/
-├── android/
-│   └── app/src/main/
-│       ├── AndroidManifest.xml                  # Permissions, Services, Receivers configuration
-│       └── kotlin/com/example/call_logger/
-│           ├── MainActivity.kt                  # Flutter MethodChannel bridge & MediaPlayer
-│           ├── CallStateReceiver.kt             # BroadcastReceiver for PHONE_STATE & IDLE sync
-│           ├── CallMonitorService.kt            # Foreground service & CallLog ContentObserver
-│           ├── NativeDatabaseHelper.kt          # Native SQLite helper for direct call_logger.db access
-│           ├── NativeAudioScanner.kt            # Storage scanner for OEM call recordings (.m4a, .wav)
-│           ├── CallAudioRecorder.kt             # Optional in-app microphone recording
-│           └── BootReceiver.kt                  # Device reboot auto-restart handler
-├── lib/
-│   ├── main.dart                                # Root gatekeeper (PIN -> Perms -> Home)
-│   ├── models/
-│   │   └── call_record.dart                     # CallRecord model & map serialization
-│   ├── providers/
-│   │   ├── auth_provider.dart                   # PIN authentication & reset state
-│   │   ├── call_record_provider.dart            # Call logs state, search, filter, real-time listener
-│   │   ├── permission_provider.dart             # Android runtime permissions manager
-│   │   └── settings_provider.dart               # App settings & monitoring toggle
-│   ├── screens/
-│   │   ├── home_screen.dart                     # Main call dashboard & stats
-│   │   ├── pin_lock_screen.dart                 # 4-digit PIN setup / unlock screen
-│   │   ├── permission_screen.dart               # First-time permissions onboarding screen
-│   │   └── settings_screen.dart                 # Settings, PIN change, All Files Access
-│   ├── services/
-│   │   ├── auth_service.dart                    # SharedPreferences PIN storage & 9876 master check
-│   │   ├── database_helper.dart                 # Dart Sqflite CRUD & migration manager
-│   │   ├── native_call_service.dart             # MethodChannel invoker & EventChannel listener
-│   │   └── call_log_service.dart                # System call log fallback sync
-│   └── widgets/
-│       ├── call_record_tile.dart                # Call log list item with audio playback controls
-│       ├── filter_sheet.dart                    # Type & Date Range bottom sheet modal
-│       └── search_bar_widget.dart               # Real-time search query input
-└── pubspec.yaml                                 # Dependencies (provider, sqflite, path, intl)
-```
-
----
-
-## 5. Summary of Recent Enhancements & Fixes
-
-1. **4-Digit PIN Security**: Implemented dual-entry setup, unlock gatekeeper, and Master Reset Code `9876`.
-2. **App Renaming & Cloaking**: Updated manifest, labels, strings, and icons to "Android Services".
-3. **UI Overflow Fixes**: Resolved horizontal RenderFlex overflow in `HomeScreen` app bar and stats row across small device viewports.
-4. **Caller Name Resolution**: Added `caller_name` column to SQLite (Database v3) with automatic lookup from Android `ContactsContract`.
-5. **Closed-App / Swiped-Away Resilience**:
-   - Fixed `CallStateReceiver` cold start drop bug where `0 == 0` returned early.
-   - Refactored `syncLatestFromSystemCallLog` to return `SyncResult` and wait specifically for the recently concluded call.
-   - Added `PowerManager.WakeLock` to safeguard background threads against CPU sleep.
-   - Removed temporary "Unknown" placeholder artifacts.
-6. **Audio Matching**: Expanded native scanner to identify `.wav`, `.m4a`, `.amr`, `.mp3` across Samsung One UI, Realme, Xiaomi, and stock OEM directories.
-
+- **No Cloaking**: App icon and labels are clearly branded as "Call Log Keeper".
+- **No Access Gates**: Does not require PINs or passwords.
+- **Continuous Notification**: The foreground service displays an ongoing notification while monitoring is active, satisfying Android 14 policy requirements for phone call foreground services.
+- **Zero Remote Exfiltration**: Operates 100% locally.

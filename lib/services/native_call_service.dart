@@ -17,8 +17,14 @@ class NativeCallService {
   static final StreamController<String> _audioSharedFromDialerController =
       StreamController<String>.broadcast();
 
+  static final StreamController<void> _callLoggedController =
+      StreamController<void>.broadcast();
+
   /// Stream of real-time call events from CallStateReceiver
   static Stream<Map<String, dynamic>> get callEventStream => _callEventStreamController.stream;
+
+  /// Stream notified when CallMonitorService saves a new call record
+  static Stream<void> get callLoggedStream => _callLoggedController.stream;
 
   /// Stream notified when audio finishes playing
   static Stream<void> get audioCompletedStream => _audioCompletedController.stream;
@@ -48,6 +54,8 @@ class NativeCallService {
         if (path != null && path.isNotEmpty) {
           _audioSharedFromDialerController.add(path);
         }
+      } else if (call.method == 'onCallLogged') {
+        _callLoggedController.add(null);
       }
     });
   }
@@ -83,6 +91,16 @@ class NativeCallService {
       return result ?? false;
     } on PlatformException catch (_) {
       return false;
+    }
+  }
+
+  /// Syncs historical calls from system CallLog into local database
+  static Future<int> syncHistoricalCalls() async {
+    try {
+      final int? count = await _channel.invokeMethod<int>('syncHistoricalCalls');
+      return count ?? 0;
+    } catch (_) {
+      return 0;
     }
   }
 
