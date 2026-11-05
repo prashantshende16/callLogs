@@ -44,9 +44,9 @@ class _CallDetailScreenState extends State<CallDetailScreen> {
     // If audio was not already linked, auto-scan device directories for recording
     if (path == null || !File(path).existsSync()) {
       final found = await NativeCallService.findNativeRecordingForCall(
-        widget.record.callerNumber,
-        widget.record.startTime,
-        widget.record.endTime,
+        number: widget.record.callerNumber,
+        startTime: widget.record.startTime,
+        endTime: widget.record.endTime,
       );
       if (found != null && found.isNotEmpty && mounted) {
         path = found;
