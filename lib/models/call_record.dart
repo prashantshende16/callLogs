@@ -72,6 +72,7 @@ class CallRecord {
   int get startTime => date;
   int get endTime => date + (duration * 1000);
   int get durationSeconds => duration;
+  int get createdAt => date;
   String get receiverNumber => 'My Device';
   String? get simSlot => null;
 
