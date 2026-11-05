@@ -1,5 +1,6 @@
 package com.example.call_logger
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -8,11 +9,13 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.database.ContentObserver
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.CallLog
 import android.provider.ContactsContract
 import android.telephony.PhoneStateListener
@@ -25,8 +28,10 @@ import android.util.Log
  *
  * Transparent background foreground service for "Call Log Keeper".
  * Displays a persistent, visible ongoing notification while monitoring calls.
- * Uses TelephonyCallback (Android 12+) and PhoneStateListener to detect call end,
- * then syncs the confirmed call record from system CallLog.Calls into SQLite.
+ * Uses:
+ * 1. ContentObserver on CallLog.Calls.CONTENT_URI for instant write detection
+ * 2. TelephonyCallback (Android 12+) and PhoneStateListener for real-time call state transitions
+ * 3. onTaskRemoved restart mechanism to persist even when app is swiped away from Recents
  */
 class CallMonitorService : Service() {
 
@@ -54,6 +59,7 @@ class CallMonitorService : Service() {
     private var lastState = TelephonyManager.CALL_STATE_IDLE
     private var wasRinging = false
     private val handler = Handler(Looper.getMainLooper())
+    private var callLogObserver: ContentObserver? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -61,20 +67,51 @@ class CallMonitorService : Service() {
         startForegroundNotification()
         isServiceRunning = true
 
+        // Register ContentObserver on system CallLog to immediately detect new entries
+        registerCallLogObserver()
+
+        // Register Telephony callback / listener
         telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             telephonyManager.registerTelephonyCallback(
                 mainExecutor,
                 object : TelephonyCallback(), TelephonyCallback.CallStateListener {
-                    override fun onCallStateChanged(state: Int) = handleState(state)
+                    override fun onCallStateChanged(state: Int) = handleState(state, null)
                 }
             )
         } else {
             @Suppress("DEPRECATION")
             telephonyManager.listen(object : PhoneStateListener() {
                 @Deprecated("Deprecated in Java")
-                override fun onCallStateChanged(state: Int, number: String?) = handleState(state)
+                override fun onCallStateChanged(state: Int, number: String?) = handleState(state, number)
             }, PhoneStateListener.LISTEN_CALL_STATE)
+        }
+    }
+
+    private fun registerCallLogObserver() {
+        try {
+            callLogObserver = object : ContentObserver(handler) {
+                override fun onChange(selfChange: Boolean, uri: Uri?) {
+                    super.onChange(selfChange, uri)
+                    Log.d(TAG, "CallLog ContentObserver triggered: uri=$uri")
+                    Thread {
+                        val helper = NativeDatabaseHelper.getInstance(this@CallMonitorService)
+                        val count = helper.syncRecentCallFromSystem()
+                        if (count > 0) {
+                            Log.d(TAG, "ContentObserver successfully synced recent call")
+                            notifyFlutterCallLogged()
+                        }
+                    }.start()
+                }
+            }
+            contentResolver.registerContentObserver(
+                CallLog.Calls.CONTENT_URI,
+                true,
+                callLogObserver!!
+            )
+            Log.d(TAG, "Registered CallLog ContentObserver successfully")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to register CallLog ContentObserver: ${e.message}")
         }
     }
 
@@ -90,78 +127,98 @@ class CallMonitorService : Service() {
         return START_STICKY
     }
 
-    private fun handleState(state: Int) {
-        Log.d(TAG, "handleState: state=$state, lastState=$lastState, wasRinging=$wasRinging")
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        Log.d(TAG, "onTaskRemoved: App swiped from Recents. Ensuring service persistence.")
+        val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val isMonitoringEnabled = prefs.getBoolean("flutter.is_monitoring_enabled", true)
+        if (isMonitoringEnabled) {
+            val restartIntent = Intent(applicationContext, CallMonitorService::class.java).apply {
+                action = ACTION_START
+            }
+            val pendingIntent = PendingIntent.getService(
+                applicationContext,
+                101,
+                restartIntent,
+                PendingIntent.FLAG_ONE_SHOT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+            )
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            alarmManager?.set(
+                AlarmManager.ELAPSED_REALTIME,
+                SystemClock.elapsedRealtime() + 1000,
+                pendingIntent
+            )
+        }
+    }
+
+    private fun handleState(state: Int, number: String?) {
+        Log.d(TAG, "handleState: state=$state, lastState=$lastState, wasRinging=$wasRinging, number=$number")
+        val now = System.currentTimeMillis()
+
         when (state) {
             TelephonyManager.CALL_STATE_RINGING -> {
                 wasRinging = true
+                if (!number.isNullOrBlank()) {
+                    CallStateReceiver.activeCallNumber = number.trim()
+                    CallStateReceiver.activeCallType = 1
+                    CallStateReceiver.activeCallStartTime = now
+
+                    // STEP 1: Insert incoming number immediately on ring
+                    Thread {
+                        val helper = NativeDatabaseHelper.getInstance(this)
+                        helper.recordCallStart(number.trim(), type = 1, timestamp = now)
+                        notifyFlutterCallLogged()
+                    }.start()
+                }
             }
             TelephonyManager.CALL_STATE_OFFHOOK -> {
-                /* Call answered or outgoing in progress */
+                if (CallStateReceiver.activeCallConnectTime == 0L) {
+                    CallStateReceiver.activeCallConnectTime = now
+                }
+                if (CallStateReceiver.activeCallStartTime == 0L) {
+                    CallStateReceiver.activeCallStartTime = now
+                }
+                if (!number.isNullOrBlank() && CallStateReceiver.activeCallNumber == null) {
+                    CallStateReceiver.activeCallNumber = number.trim()
+                    Thread {
+                        val helper = NativeDatabaseHelper.getInstance(this)
+                        helper.recordCallStart(number.trim(), type = CallStateReceiver.activeCallType, timestamp = now)
+                        notifyFlutterCallLogged()
+                    }.start()
+                }
             }
             TelephonyManager.CALL_STATE_IDLE -> {
                 if (lastState != TelephonyManager.CALL_STATE_IDLE) {
-                    val answered = wasRinging
-                    // Standard delay (~800ms) for Android system CallLog.Calls to populate
-                    handler.postDelayed({
-                        syncLatestCallFromLog(answered)
-                        wasRinging = false
-                    }, 800)
+                    val referenceTime = System.currentTimeMillis()
+                    // STEP 2: Rapid poll to capture the newly logged call & update duration
+                    Thread {
+                        val helper = NativeDatabaseHelper.getInstance(this)
+                        var captured = false
+                        for (i in 0..15) {
+                            if (i > 0) Thread.sleep(250)
+                            val count = helper.syncRecentCallFromSystem(referenceTime)
+                            if (count > 0) {
+                                Log.d(TAG, "Captured call from handleState IDLE on attempt $i")
+                                notifyFlutterCallLogged()
+                                captured = true
+                                break
+                            }
+                        }
+                        if (!captured && CallStateReceiver.activeCallNumber != null && CallStateReceiver.activeCallStartTime > 0L) {
+                            val duration = if (CallStateReceiver.activeCallConnectTime > 0L) {
+                                (System.currentTimeMillis() - CallStateReceiver.activeCallConnectTime) / 1000L
+                            } else 0L
+                            helper.updateFallbackDuration(CallStateReceiver.activeCallNumber!!, CallStateReceiver.activeCallStartTime, duration)
+                            notifyFlutterCallLogged()
+                        }
+                    }.start()
+                    wasRinging = false
                 }
             }
         }
         lastState = state
     }
 
-    /**
-     * Reads the confirmed call record after it ends and saves it to local SQLite.
-     */
-    private fun syncLatestCallFromLog(wasAnswered: Boolean) {
-        try {
-            val cursor = contentResolver.query(
-                CallLog.Calls.CONTENT_URI,
-                null,
-                null,
-                null,
-                "${CallLog.Calls.DATE} DESC LIMIT 1"
-            )
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val number = it.getString(it.getColumnIndexOrThrow(CallLog.Calls.NUMBER))
-                    val type = it.getInt(it.getColumnIndexOrThrow(CallLog.Calls.TYPE))
-                    val duration = it.getLong(it.getColumnIndexOrThrow(CallLog.Calls.DURATION))
-                    val date = it.getLong(it.getColumnIndexOrThrow(CallLog.Calls.DATE))
-                    val name = resolveContactName(number)
-
-                    NativeDatabaseHelper(this).insertCallRecord(number, name, type, date, duration)
-                    Log.d(TAG, "Synced latest call to backup: number=$number, name=$name, type=$type, date=$date, duration=$duration")
-                    notifyFlutterCallLogged()
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error syncing latest call from log: ${e.message}", e)
-        }
-    }
-
-    /**
-     * Resolves contact display name from ContactsContract by phone number.
-     */
-    private fun resolveContactName(number: String): String? {
-        if (number.isBlank()) return null
-        return try {
-            val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number.trim()))
-            contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null)?.use {
-                if (it.moveToFirst()) it.getString(0) else null
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not resolve contact name: ${e.message}")
-            null
-        }
-    }
-
-    /**
-     * Starts foreground service with phoneCall type (with MANAGE_OWN_CALLS) or dataSync fallback.
-     */
     private fun startForegroundNotification() {
         val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -197,9 +254,6 @@ class CallMonitorService : Service() {
         }
     }
 
-    /**
-     * Builds the transparent, persistent, visible ongoing notification.
-     */
     private fun buildNotification(): Notification {
         val channelId = CHANNEL_ID
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -250,6 +304,11 @@ class CallMonitorService : Service() {
     override fun onDestroy() {
         isServiceRunning = false
         Log.d(TAG, "CallMonitorService destroyed")
+        callLogObserver?.let {
+            try {
+                contentResolver.unregisterContentObserver(it)
+            } catch (_: Exception) {}
+        }
         super.onDestroy()
     }
 

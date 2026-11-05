@@ -16,14 +16,16 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final settings = Provider.of<SettingsProvider>(context, listen: false);
       final recordProvider = Provider.of<CallRecordProvider>(context, listen: false);
 
+      recordProvider.loadRecords();
       recordProvider.startListeningToNativeEvents();
 
       // Trigger one-time initial sync from device call log if not done yet
@@ -31,6 +33,20 @@ class _HomeScreenState extends State<HomeScreen> {
         recordProvider.syncHistoricalCallLogs().then((_) => settings.markInitialSyncDone());
       }
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Refresh call records from SQLite as soon as user returns to the app
+      Provider.of<CallRecordProvider>(context, listen: false).loadRecords();
+    }
   }
 
   void _showFilterModal() {
@@ -68,17 +84,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: 12,
+        titleSpacing: 8,
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
               'Call Log Keeper',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.5),
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 5),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
               decoration: BoxDecoration(
                 color: settings.isMonitoringEnabled
                     ? const Color(0xFFDCFCE7)
@@ -107,7 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(
                     settings.isMonitoringEnabled ? 'Active' : 'Paused',
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 9.5,
                       fontWeight: FontWeight.w600,
                       color: settings.isMonitoringEnabled
                           ? const Color(0xFF15803D)

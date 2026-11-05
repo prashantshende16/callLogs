@@ -51,7 +51,12 @@ class CallRecordProvider with ChangeNotifier {
 
     _nativeEventSub?.cancel();
     _nativeEventSub = NativeCallService.callEventStream.listen((event) {
-      if (event['event'] == 'ended' || event['event'] == 'sync_latest_call_log') {
+      final ev = event['event'];
+      if (ev == 'ended' ||
+          ev == 'sync_latest_call_log' ||
+          ev == 'ringing' ||
+          ev == 'dialing' ||
+          ev == 'connected') {
         loadRecords();
       }
     });
