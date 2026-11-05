@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/call_record.dart';
+import '../services/call_log_service.dart';
 import '../services/database_helper.dart';
 import '../services/native_call_service.dart';
 
@@ -66,7 +67,12 @@ class CallRecordProvider with ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      final count = await NativeCallService.syncHistoricalCalls();
+      var count = await NativeCallService.syncHistoricalCalls();
+      if (count == 0) {
+        count = await CallLogService.syncHistoricalCallLogs(
+          fallbackReceiverNumber: fallbackReceiverNumber,
+        );
+      }
       await loadRecords();
       return count;
     } catch (e) {

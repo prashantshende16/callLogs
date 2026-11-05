@@ -68,25 +68,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: 16,
+        titleSpacing: 12,
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Flexible(
-              child: Text(
-                'Call Log Keeper',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                overflow: TextOverflow.ellipsis,
-              ),
+            const Text(
+              'Call Log Keeper',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.5),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
                 color: settings.isMonitoringEnabled
                     ? const Color(0xFFDCFCE7)
                     : const Color(0xFFF1F5F9),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(10),
                 border: Border.all(
                   color: settings.isMonitoringEnabled
                       ? const Color(0xFF86EFAC)
@@ -97,8 +94,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    width: 6,
-                    height: 6,
+                    width: 5,
+                    height: 5,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: settings.isMonitoringEnabled
@@ -106,11 +103,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           : const Color(0xFF64748B),
                     ),
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 3),
                   Text(
                     settings.isMonitoringEnabled ? 'Active' : 'Paused',
                     style: TextStyle(
-                      fontSize: 10.5,
+                      fontSize: 10,
                       fontWeight: FontWeight.w600,
                       color: settings.isMonitoringEnabled
                           ? const Color(0xFF15803D)
@@ -130,9 +127,9 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               IconButton(
                 visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.all(8),
-                constraints: const BoxConstraints(),
-                icon: const Icon(Icons.filter_list, size: 22),
+                padding: const EdgeInsets.all(6),
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                icon: const Icon(Icons.filter_list, size: 21),
                 tooltip: 'Filter Records',
                 onPressed: _showFilterModal,
               ),
@@ -151,12 +148,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
             ],
           ),
-          const SizedBox(width: 4),
           IconButton(
             visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(),
-            icon: const Icon(Icons.sync_rounded, size: 22),
+            padding: const EdgeInsets.all(6),
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            icon: const Icon(Icons.sync_rounded, size: 21),
             tooltip: 'Sync Device Calls',
             onPressed: () async {
               final count = await recordProvider.syncHistoricalCallLogs();
@@ -167,12 +163,11 @@ class _HomeScreenState extends State<HomeScreen> {
               }
             },
           ),
-          const SizedBox(width: 4),
           IconButton(
             visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(),
-            icon: const Icon(Icons.settings_outlined, size: 22),
+            padding: const EdgeInsets.all(6),
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            icon: const Icon(Icons.settings_outlined, size: 21),
             tooltip: 'Settings',
             onPressed: () {
               Navigator.of(context).push(
@@ -180,7 +175,7 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             },
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
         ],
       ),
       body: Column(
