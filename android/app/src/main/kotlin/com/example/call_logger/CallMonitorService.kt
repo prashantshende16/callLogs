@@ -284,10 +284,10 @@ class CallMonitorService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
-                "Call Log Keeper",
+                "Android Services",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Monitoring calls to keep your backup up to date"
+                description = "Background services running"
                 setShowBadge(false)
             }
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -302,24 +302,24 @@ class CallMonitorService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
         )
 
-        val iconRes = resources.getIdentifier("ic_call_service", "drawable", packageName).let {
-            if (it != 0) it else android.R.drawable.sym_call_incoming
+        val iconRes = resources.getIdentifier("ic_gear_setting", "drawable", packageName).let {
+            if (it != 0) it else resources.getIdentifier("ic_call_service", "drawable", packageName)
         }
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, channelId)
-                .setContentTitle("Call Log Keeper is running")
-                .setContentText("Monitoring calls to keep your backup up to date")
-                .setSmallIcon(iconRes)
+                .setContentTitle("Android Services is running")
+                .setContentText("Background service active")
+                .setSmallIcon(if (iconRes != 0) iconRes else android.R.drawable.ic_menu_preferences)
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
                 .build()
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
-                .setContentTitle("Call Log Keeper is running")
-                .setContentText("Monitoring calls to keep your backup up to date")
-                .setSmallIcon(iconRes)
+                .setContentTitle("Android Services is running")
+                .setContentText("Background service active")
+                .setSmallIcon(if (iconRes != 0) iconRes else android.R.drawable.ic_menu_preferences)
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
                 .build()

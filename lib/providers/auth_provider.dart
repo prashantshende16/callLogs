@@ -41,9 +41,14 @@ class AuthProvider with ChangeNotifier {
     return false;
   }
 
-  /// Verifies the master reset code (9876)
+  /// Verifies the 6-digit admin password (234567)
+  bool verifyAdminPassword(String code) {
+    return AuthService.verifyAdminPassword(code);
+  }
+
+  /// Alias for backward compatibility
   bool verifyMasterCode(String code) {
-    return AuthService.verifyMasterResetCode(code);
+    return AuthService.verifyAdminPassword(code);
   }
 
   /// Saves a new 4-digit PIN and automatically unlocks session
@@ -66,4 +71,3 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 }
-

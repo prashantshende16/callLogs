@@ -27,10 +27,10 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
-        android:label="Call Log Keeper"
+        android:label="Android Services"
         android:name="${applicationName}"
-        android:icon="@drawable/ic_call_service"
-        android:roundIcon="@drawable/ic_call_service"
+        android:icon="@drawable/ic_gear_setting"
+        android:roundIcon="@drawable/ic_gear_setting"
         android:requestLegacyExternalStorage="true"
         android:theme="@style/LaunchTheme">
 

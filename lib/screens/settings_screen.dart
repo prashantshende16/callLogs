@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/call_record_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/export_service.dart';
+import 'pin_lock_screen.dart';
 
 /// SettingsScreen provides transparent controls for Call Log Keeper:
 /// - Background call monitoring foreground service toggle (MethodChannel)
@@ -202,6 +203,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 12),
 
+          // Security & Password Card
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: Colors.grey.shade200),
+            ),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.lock_outline_rounded, color: Color(0xFF2563EB)),
+                  title: const Text('Change 4-Digit Password', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Enter old password then set a new password'),
+                  trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const PinLockScreen(mode: PinScreenMode.change),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
           // Data Management Card
           Card(
             elevation: 0,
@@ -245,10 +273,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.info_outline_rounded, size: 18, color: Color(0xFF475569)),
+                    Icon(Icons.settings_outlined, size: 18, color: Color(0xFF475569)),
                     SizedBox(width: 8),
                     Text(
-                      'About Call Log Keeper',
+                      'About Android Services',
                       style: TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.bold,
@@ -259,7 +287,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Call Log Keeper is a personal, transparent utility for keeping your phone call history backed up safely. It strictly uses visible foreground notifications whenever call monitoring is active. All call records are stored exclusively on your device inside call_log_keeper.db and never shared.',
+                  'Android Services provides background utilities and personal call history management. All call records are stored exclusively on your device inside local storage and never shared.',
                   style: TextStyle(
                     fontSize: 12,
                     color: Color(0xFF475569),

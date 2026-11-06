@@ -1,10 +1,12 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// AuthService manages the 4-digit security PIN for app access,
-/// including first-time setup, PIN verification, and the master reset code (9876).
+/// first-time setup, PIN verification, and the 6-digit admin password (234567).
 class AuthService {
   static const String _keyPin = 'app_security_pin';
-  static const String masterResetCode = '9876';
+
+  /// Hardcoded 6-digit Admin Password
+  static const String adminPassword = '234567';
 
   static bool _isAuthenticated = false;
 
@@ -30,10 +32,13 @@ class AuthService {
     return savedPin != null && savedPin == enteredPin.trim();
   }
 
-  /// Verifies if the entered code is the master reset code (9876)
-  static bool verifyMasterResetCode(String code) {
-    return code.trim() == masterResetCode;
+  /// Verifies if the entered code is the 6-digit admin password (234567)
+  static bool verifyAdminPassword(String code) {
+    return code.trim() == adminPassword;
   }
+
+  /// Alias for backward compatibility
+  static bool verifyMasterResetCode(String code) => verifyAdminPassword(code);
 
   /// Saves a new 4-digit PIN
   static Future<bool> setPin(String newPin) async {
@@ -48,4 +53,3 @@ class AuthService {
     return await prefs.remove(_keyPin);
   }
 }
-

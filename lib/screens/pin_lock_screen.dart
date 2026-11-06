@@ -5,7 +5,7 @@ import '../providers/auth_provider.dart';
 enum PinScreenMode {
   setup, // First install: enter 4 digits twice to set
   unlock, // Normal launch: enter 4 digits to unlock
-  change, // Settings: enter old pin/master code, then enter new pin twice
+  change, // Settings: enter old pin, then enter new pin twice
 }
 
 class PinLockScreen extends StatefulWidget {
@@ -47,7 +47,7 @@ class _PinLockScreenState extends State<PinLockScreen> {
     return PopScope(
       canPop: _currentMode == PinScreenMode.change,
       child: Scaffold(
-        backgroundColor: const Color(0xFF0F172A), // Dark slate / secure theme
+        backgroundColor: const Color(0xFF0F172A), // Secure dark theme
         body: SafeArea(
           child: Column(
             children: [
@@ -63,17 +63,20 @@ class _PinLockScreenState extends State<PinLockScreen> {
                 ),
               const Spacer(flex: 1),
 
-              // Shield Icon & Title
+              // Gear / Settings Icon & Title
               Container(
                 width: 72,
                 height: 72,
                 decoration: BoxDecoration(
                   color: const Color(0xFF1E293B),
                   shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFF3B82F6).withValues(alpha: 0.4), width: 2),
+                  border: Border.all(
+                    color: const Color(0xFF3B82F6).withValues(alpha: 0.4),
+                    width: 2,
+                  ),
                 ),
                 child: const Icon(
-                  Icons.lock_outline_rounded,
+                  Icons.settings,
                   size: 38,
                   color: Color(0xFF60A5FA),
                 ),
@@ -132,8 +135,9 @@ class _PinLockScreenState extends State<PinLockScreen> {
               _buildKeypad(),
               const SizedBox(height: 16),
 
-              // Forgot Password Option (only in unlock mode)
-              if (_currentMode == PinScreenMode.unlock)
+              // Forgot Password Button (in unlock mode or change step 1)
+              if (_currentMode == PinScreenMode.unlock ||
+                  (_currentMode == PinScreenMode.change && _changeStep == 1))
                 TextButton(
                   onPressed: _showForgotPasswordDialog,
                   child: const Text(
@@ -158,9 +162,9 @@ class _PinLockScreenState extends State<PinLockScreen> {
     if (_currentMode == PinScreenMode.setup) {
       return _step == 1 ? 'Set 4-Digit Password' : 'Confirm Password';
     } else if (_currentMode == PinScreenMode.change) {
-      if (_changeStep == 1) return 'Verify Current Password';
-      if (_changeStep == 2) return 'Enter New 4-Digit PIN';
-      return 'Confirm New PIN';
+      if (_changeStep == 1) return 'Enter Old Password';
+      if (_changeStep == 2) return 'Set New Password';
+      return 'Confirm New Password';
     } else {
       return 'Android Services';
     }
@@ -169,12 +173,12 @@ class _PinLockScreenState extends State<PinLockScreen> {
   String _getSubtitle() {
     if (_currentMode == PinScreenMode.setup) {
       return _step == 1
-          ? 'Create a 4-digit security password to protect access to the app'
+          ? 'Enter a 4-digit password to protect Android Services'
           : 'Please re-enter your 4-digit password to confirm';
     } else if (_currentMode == PinScreenMode.change) {
-      if (_changeStep == 1) return 'Enter your current PIN or Master Reset Code (9876)';
-      if (_changeStep == 2) return 'Choose a new 4-digit passcode';
-      return 'Re-enter your new 4-digit passcode';
+      if (_changeStep == 1) return 'Enter your current 4-digit password';
+      if (_changeStep == 2) return 'Choose a new 4-digit password';
+      return 'Re-enter your new 4-digit password';
     } else {
       return 'Enter your 4-digit password to continue';
     }
@@ -285,7 +289,6 @@ class _PinLockScreenState extends State<PinLockScreen> {
     });
 
     if (_enteredPin.length == 4) {
-      // Defer processing to let the 4th dot light up
       Future.delayed(const Duration(milliseconds: 120), () {
         _processCompletePin(_enteredPin);
       });
@@ -316,13 +319,11 @@ class _PinLockScreenState extends State<PinLockScreen> {
       } else {
         // Confirmation entry
         if (pin == _firstEnteredPin) {
-          // Both match! Save PIN
           await auth.setPin(pin);
           if (widget.onSuccess != null) {
             widget.onSuccess!();
           }
         } else {
-          // Mismatch, reset to step 1
           setState(() {
             _errorMessage = 'Passwords do not match. Please try again.';
             _enteredPin = '';
@@ -345,11 +346,11 @@ class _PinLockScreenState extends State<PinLockScreen> {
       }
     } else if (_currentMode == PinScreenMode.change) {
       if (_changeStep == 1) {
-        // Verify current PIN or master reset code (9876)
+        // Verify current PIN or admin code
         final isOldValid = await auth.verifyAndUnlock(pin);
-        final isMaster = auth.verifyMasterCode(pin);
+        final isAdmin = auth.verifyAdminPassword(pin);
 
-        if (isOldValid || isMaster) {
+        if (isOldValid || isAdmin) {
           setState(() {
             _changeStep = 2;
             _enteredPin = '';
@@ -357,7 +358,7 @@ class _PinLockScreenState extends State<PinLockScreen> {
           });
         } else {
           setState(() {
-            _errorMessage = 'Invalid current PIN. Enter current PIN or 9876.';
+            _errorMessage = 'Invalid old password. Please try again.';
             _enteredPin = '';
           });
         }
@@ -376,7 +377,7 @@ class _PinLockScreenState extends State<PinLockScreen> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Password updated successfully!'),
+                content: Text('Password changed successfully!'),
                 backgroundColor: Color(0xFF10B981),
               ),
             );
@@ -394,9 +395,9 @@ class _PinLockScreenState extends State<PinLockScreen> {
     }
   }
 
-  /// Displays the Master Reset Code dialog
+  /// Displays the 6-digit Admin Password dialog (hardcoded: 234567)
   void _showForgotPasswordDialog() {
-    final resetController = TextEditingController();
+    final adminController = TextEditingController();
     String? dialogError;
 
     showDialog(
@@ -409,10 +410,10 @@ class _PinLockScreenState extends State<PinLockScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               title: const Row(
                 children: [
-                  Icon(Icons.lock_reset_rounded, color: Color(0xFF60A5FA)),
+                  Icon(Icons.admin_panel_settings_rounded, color: Color(0xFF60A5FA)),
                   SizedBox(width: 10),
                   Text(
-                    'Reset Password',
+                    'Admin Reset',
                     style: TextStyle(color: Colors.white, fontSize: 18),
                   ),
                 ],
@@ -422,25 +423,25 @@ class _PinLockScreenState extends State<PinLockScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Enter the 4-digit Master Reset Code to reset your password:',
+                    'Enter the 6-digit Admin Password to reset your password:',
                     style: TextStyle(color: Colors.white70, fontSize: 14),
                   ),
                   const SizedBox(height: 16),
                   TextField(
-                    controller: resetController,
+                    controller: adminController,
                     keyboardType: TextInputType.number,
-                    maxLength: 4,
+                    maxLength: 6,
                     obscureText: true,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 20,
-                      letterSpacing: 8,
+                      fontSize: 22,
+                      letterSpacing: 6,
                       fontWeight: FontWeight.bold,
                     ),
                     textAlign: TextAlign.center,
                     decoration: InputDecoration(
-                      hintText: '••••',
-                      hintStyle: const TextStyle(color: Colors.white30, letterSpacing: 8),
+                      hintText: '••••••',
+                      hintStyle: const TextStyle(color: Colors.white30, letterSpacing: 6),
                       filled: true,
                       fillColor: const Color(0xFF0F172A),
                       errorText: dialogError,
@@ -461,12 +462,12 @@ class _PinLockScreenState extends State<PinLockScreen> {
                 FilledButton(
                   style: FilledButton.styleFrom(backgroundColor: const Color(0xFF3B82F6)),
                   onPressed: () {
-                    final enteredCode = resetController.text.trim();
+                    final enteredCode = adminController.text.trim();
                     final auth = Provider.of<AuthProvider>(context, listen: false);
 
-                    if (auth.verifyMasterCode(enteredCode)) {
+                    if (auth.verifyAdminPassword(enteredCode)) {
                       Navigator.of(ctx).pop();
-                      // Transition current screen in-place to setup mode so user creates a new PIN
+                      // Transition current screen to setup mode so user creates a new 4-digit PIN
                       setState(() {
                         _currentMode = PinScreenMode.setup;
                         _enteredPin = '';
@@ -476,7 +477,7 @@ class _PinLockScreenState extends State<PinLockScreen> {
                       });
                     } else {
                       setDialogState(() {
-                        dialogError = 'Invalid Master Code (9876)';
+                        dialogError = 'Invalid Admin Password';
                       });
                     }
                   },
