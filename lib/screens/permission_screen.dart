@@ -149,6 +149,14 @@ class _PermissionScreenState extends State<PermissionScreen> with WidgetsBinding
                           'Displays the persistent, visible ongoing notification required by Android while monitoring is active.',
                       isGranted: permProvider.isNotificationGranted,
                     ),
+                    const SizedBox(height: 12),
+                    _buildPermissionItem(
+                      icon: Icons.mic_rounded,
+                      title: 'Call Recordings (READ_MEDIA_AUDIO)',
+                      description:
+                          'Detects and copies native dialer voice recordings into protected app storage.',
+                      isGranted: permProvider.isAudioGranted,
+                    ),
                     const SizedBox(height: 16),
 
                     // Privacy notice box

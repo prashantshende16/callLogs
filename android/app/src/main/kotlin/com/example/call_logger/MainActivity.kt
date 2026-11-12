@@ -102,15 +102,20 @@ class MainActivity : FlutterActivity() {
                 }
 
                 "scanAllNativeRecordings" -> {
-                    val recordings = NativeAudioScanner.scanAllNativeRecordings()
+                    val recordings = NativeAudioScanner.scanAllNativeRecordings(this)
                     result.success(recordings)
+                }
+
+                "attachRecordingsToUnattachedCalls" -> {
+                    val count = NativeAudioScanner.attachRecordingsToUnattachedCalls(this)
+                    result.success(count)
                 }
 
                 "copyAudioToAppStorage" -> {
                     val path = call.argument<String>("path") ?: ""
                     val number = call.argument<String>("number") ?: "call"
                     if (path.isNotEmpty()) {
-                        val copied = NativeAudioScanner.backupToAppStorage(this, java.io.File(path), number)
+                        val copied = NativeAudioScanner.backupFileToAppStorage(this, java.io.File(path), number)
                         result.success(copied)
                     } else {
                         result.success(null)

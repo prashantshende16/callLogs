@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/call_record_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/export_service.dart';
+import '../services/native_call_service.dart';
 import 'pin_lock_screen.dart';
 
 /// SettingsScreen provides transparent controls for Call Log Keeper:
@@ -173,7 +174,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'Manually sync confirmed calls from your phone call log into your local database.',
+                    'Manually sync confirmed calls and scan native voice recordings into local storage.',
                     style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
                   ),
                   const SizedBox(height: 14),
@@ -181,7 +182,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     width: double.infinity,
                     child: OutlinedButton.icon(
                       icon: const Icon(Icons.sync_rounded),
-                      label: const Text('Sync Call History Now'),
+                      label: const Text('Sync Call History & Recordings'),
                       style: OutlinedButton.styleFrom(
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
@@ -189,9 +190,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       onPressed: () async {
                         final count = await recordProvider.syncHistoricalCallLogs();
+                        final recCount = await NativeCallService.attachRecordingsToUnattachedCalls();
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Synced $count calls into backup')),
+                            SnackBar(content: Text('Synced $count calls ($recCount recordings linked)')),
                           );
                         }
                       },
@@ -199,6 +201,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
               ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Call Recording Storage Permission Card
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: Colors.grey.shade200),
+            ),
+            child: ListTile(
+              leading: const Icon(Icons.folder_shared_outlined, color: Color(0xFF2563EB)),
+              title: const Text('Call Recording Storage Access', style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: const Text('Allow All Files Access to auto-detect recordings from dialer'),
+              trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+              onTap: () async {
+                await NativeCallService.openAllFilesAccessSettings();
+              },
             ),
           ),
           const SizedBox(height: 12),

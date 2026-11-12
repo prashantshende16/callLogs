@@ -19,6 +19,9 @@ class PermissionProvider with ChangeNotifier {
   bool get isCallLogGranted => _statuses[Permission.phone]?.isGranted ?? false;
   bool get isContactsGranted => _statuses[Permission.contacts]?.isGranted ?? false;
   bool get isNotificationGranted => _statuses[Permission.notification]?.isGranted ?? false;
+  bool get isAudioGranted =>
+      (_statuses[Permission.audio]?.isGranted ?? false) ||
+      (_statuses[Permission.storage]?.isGranted ?? false);
 
   PermissionProvider() {
     checkPermissions();
@@ -31,7 +34,7 @@ class PermissionProvider with ChangeNotifier {
 
     try {
       _statuses = await PermissionService.checkStatuses();
-      _areAllGranted = _statuses.values.every((s) => s.isGranted);
+      _areAllGranted = await PermissionService.areAllPermissionsGranted();
       _isPermanentlyDenied = _statuses.values.any((s) => s.isPermanentlyDenied);
     } catch (e) {
       if (kDebugMode) {
@@ -50,7 +53,7 @@ class PermissionProvider with ChangeNotifier {
 
     try {
       _statuses = await PermissionService.requestAll();
-      _areAllGranted = _statuses.values.every((s) => s.isGranted);
+      _areAllGranted = await PermissionService.areAllPermissionsGranted();
       _isPermanentlyDenied = _statuses.values.any((s) => s.isPermanentlyDenied);
       return _areAllGranted;
     } catch (e) {

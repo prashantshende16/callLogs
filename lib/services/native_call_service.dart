@@ -230,6 +230,16 @@ class NativeCallService {
     }
   }
 
+  /// Scans and automatically links recordings to recent unattached calls in the local database
+  static Future<int> attachRecordingsToUnattachedCalls() async {
+    try {
+      final int? count = await _channel.invokeMethod<int>('attachRecordingsToUnattachedCalls');
+      return count ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   /// Checks if All Files Access (MANAGE_EXTERNAL_STORAGE) is granted on Android 11+
   static Future<bool> checkAllFilesAccess() async {
     try {

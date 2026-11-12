@@ -364,21 +364,25 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
             var rows = 0
             if (!number.isNullOrBlank() && number != "Unknown") {
                 val cleanNumber = number.trim()
-                val minDate = if (date > 0) date - 60_000L else System.currentTimeMillis() - 120_000L
-                val maxDate = if (date > 0) date + 60_000L else System.currentTimeMillis() + 120_000L
+                val minDate = if (date > 0) date - 180_000L else System.currentTimeMillis() - 300_000L
+                val maxDate = if (date > 0) date + 180_000L else System.currentTimeMillis() + 300_000L
 
+                val digits = cleanNumber.replace(Regex("[^0-9]"), "")
+                val last10 = if (digits.length >= 10) digits.takeLast(10) else digits
+
+                // Match exact number OR suffix (last 10 digits)
                 rows = db.update(
                     TABLE_CALL_RECORDS,
                     values,
-                    "$COL_NUMBER = ? AND $COL_DATE >= ? AND $COL_DATE <= ?",
-                    arrayOf(cleanNumber, minDate.toString(), maxDate.toString())
+                    "($COL_NUMBER = ? OR $COL_NUMBER LIKE ? OR ? LIKE '%' || $COL_NUMBER) AND $COL_DATE >= ? AND $COL_DATE <= ?",
+                    arrayOf(cleanNumber, "%$last10", cleanNumber, minDate.toString(), maxDate.toString())
                 )
             }
 
             if (rows == 0 && date > 0) {
-                // Try matching by date within 30s
-                val minDate = date - 30_000L
-                val maxDate = date + 30_000L
+                // Try matching by date within 3 minutes
+                val minDate = date - 180_000L
+                val maxDate = date + 180_000L
                 rows = db.update(
                     TABLE_CALL_RECORDS,
                     values,
@@ -417,5 +421,42 @@ class NativeDatabaseHelper(private val context: Context) : SQLiteOpenHelper(
             Log.e(TAG, "Failed in updateAudioPath: ${e.message}", e)
             0
         }
+    }
+
+    /**
+     * Retrieves recent call records that do not have an audio recording linked yet.
+     */
+    fun getUnattachedCalls(limit: Int = 20): List<Map<String, Any>> {
+        val list = mutableListOf<Map<String, Any>>()
+        try {
+            val db = readableDatabase
+            db.query(
+                TABLE_CALL_RECORDS,
+                arrayOf(COL_ID, COL_NUMBER, COL_DATE, COL_DURATION),
+                "$COL_AUDIO_PATH IS NULL OR $COL_AUDIO_PATH = ''",
+                null,
+                null,
+                null,
+                "$COL_DATE DESC LIMIT $limit"
+            )?.use { cursor ->
+                val idIdx = cursor.getColumnIndexOrThrow(COL_ID)
+                val numIdx = cursor.getColumnIndexOrThrow(COL_NUMBER)
+                val dateIdx = cursor.getColumnIndexOrThrow(COL_DATE)
+                val durIdx = cursor.getColumnIndexOrThrow(COL_DURATION)
+                while (cursor.moveToNext()) {
+                    list.add(
+                        mapOf(
+                            "id" to cursor.getLong(idIdx),
+                            "number" to (cursor.getString(numIdx) ?: ""),
+                            "date" to cursor.getLong(dateIdx),
+                            "duration" to cursor.getLong(durIdx)
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in getUnattachedCalls: ${e.message}")
+        }
+        return list
     }
 }

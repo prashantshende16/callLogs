@@ -78,6 +78,8 @@ class CallRecordProvider with ChangeNotifier {
           fallbackReceiverNumber: fallbackReceiverNumber,
         );
       }
+      // Automatically scan and attach native recordings for unattached calls
+      await NativeCallService.attachRecordingsToUnattachedCalls();
       await loadRecords();
       return count;
     } catch (e) {

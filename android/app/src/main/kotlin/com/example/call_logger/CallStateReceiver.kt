@@ -52,7 +52,7 @@ class CallStateReceiver : BroadcastReceiver() {
             PowerManager.PARTIAL_WAKE_LOCK,
             "CallLogKeeper:ReceiverWakeLock"
         )
-        wakeLock?.acquire(12000L) // 12 seconds max
+        wakeLock?.acquire(20000L) // 20 seconds max for multi-stage audio detection
 
         // Ensure CallMonitorService is alive if monitoring is enabled in preferences
         ensureServiceRunning(context)
@@ -201,28 +201,29 @@ class CallStateReceiver : BroadcastReceiver() {
                                     CallMonitorService.notifyFlutterCallLogged()
                                 }
 
-                                // STEP 3: Scan, copy to app storage, and link audio recording to SQLite
+                                // STEP 3: Scan, copy to app storage, and link audio recording to SQLite with multi-stage retry
                                 try {
                                     val startRef = if (callStart > 0L) callStart else referenceTime - 60_000L
-                                    var copiedPath = NativeAudioScanner.scanAndAttachRecording(
-                                        context,
-                                        targetNumber,
-                                        startRef,
-                                        referenceTime
-                                    )
-                                    if (copiedPath == null) {
-                                        // Brief retry after 1.5 seconds as OEM voice recorder finalizes file flush
-                                        Thread.sleep(1500)
+                                    val retryDelays = listOf(1000L, 2000L, 2500L, 3000L) // Multi-stage polling up to 8.5 seconds
+                                    var copiedPath: String? = null
+
+                                    for ((index, delay) in retryDelays.withIndex()) {
+                                        Thread.sleep(delay)
                                         copiedPath = NativeAudioScanner.scanAndAttachRecording(
                                             context,
                                             targetNumber,
                                             startRef,
-                                            referenceTime
+                                            System.currentTimeMillis()
                                         )
+                                        if (copiedPath != null) {
+                                            Log.d(TAG, "Audio recording automatically linked on attempt ${index + 1}: $copiedPath")
+                                            CallMonitorService.notifyFlutterCallLogged()
+                                            break
+                                        }
                                     }
-                                    if (copiedPath != null) {
-                                        Log.d(TAG, "Audio recording automatically linked: $copiedPath")
-                                        CallMonitorService.notifyFlutterCallLogged()
+
+                                    if (copiedPath == null) {
+                                        NativeAudioScanner.attachRecordingsToUnattachedCalls(context)
                                     }
                                 } catch (e: Exception) {
                                     Log.w(TAG, "Voice recording scan error: ${e.message}")

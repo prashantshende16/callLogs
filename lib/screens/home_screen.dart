@@ -6,6 +6,7 @@ import '../providers/settings_provider.dart';
 import '../widgets/call_record_tile.dart';
 import '../widgets/filter_sheet.dart';
 import '../widgets/search_bar_widget.dart';
+import '../services/native_call_service.dart';
 import 'settings_screen.dart';
 
 /// HomeScreen renders the transparent call records list, stats bar, search & filter controls.
@@ -17,10 +18,13 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  bool _hasAllFilesAccess = true;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _checkAllFilesAccess();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final settings = Provider.of<SettingsProvider>(context, listen: false);
       final recordProvider = Provider.of<CallRecordProvider>(context, listen: false);
@@ -35,6 +39,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
+  Future<void> _checkAllFilesAccess() async {
+    final hasAccess = await NativeCallService.checkAllFilesAccess();
+    if (mounted && hasAccess != _hasAllFilesAccess) {
+      setState(() {
+        _hasAllFilesAccess = hasAccess;
+      });
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -44,6 +57,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _checkAllFilesAccess();
+      NativeCallService.attachRecordingsToUnattachedCalls();
       // Refresh call records from SQLite as soon as user returns to the app
       Provider.of<CallRecordProvider>(context, listen: false).loadRecords();
     }
@@ -209,11 +224,68 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           // Summary Stats Bar
           _buildStatsBar(recordProvider),
 
+          // All Files Access Banner for Call Recording Auto-Detection
+          if (!_hasAllFilesAccess)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFBFDBFE)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.mic_rounded, color: Color(0xFF2563EB), size: 22),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Call Recording Auto-Save',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: Color(0xFF1E3A8A),
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Grant storage access to auto-detect and save voice recordings from dialer.',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: Color(0xFF3B82F6),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF2563EB),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: () async {
+                      await NativeCallService.openAllFilesAccessSettings();
+                    },
+                    child: const Text('Allow', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+
           // Records List with Pull-to-refresh
           Expanded(
             child: RefreshIndicator(
               onRefresh: () async {
+                await NativeCallService.attachRecordingsToUnattachedCalls();
                 await recordProvider.loadRecords();
+                await _checkAllFilesAccess();
               },
               child: recordProvider.isLoading
                   ? const Center(child: CircularProgressIndicator())

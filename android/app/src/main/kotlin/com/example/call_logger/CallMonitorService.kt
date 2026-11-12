@@ -212,26 +212,30 @@ class CallMonitorService : Service() {
                             notifyFlutterCallLogged()
                         }
 
-                        // Scan, copy to app storage, and link audio recording
+                        // Scan, copy to app storage, and link audio recording with multi-stage retry
                         try {
                             val startRef = if (CallStateReceiver.activeCallStartTime > 0L) CallStateReceiver.activeCallStartTime else referenceTime - 60_000L
-                            var copiedPath = NativeAudioScanner.scanAndAttachRecording(
-                                this@CallMonitorService,
-                                CallStateReceiver.activeCallNumber,
-                                startRef,
-                                referenceTime
-                            )
-                            if (copiedPath == null) {
-                                Thread.sleep(1500)
+                            val targetNumber = CallStateReceiver.activeCallNumber
+                            val retryDelays = listOf(1000L, 2000L, 2500L, 3000L)
+                            var copiedPath: String? = null
+
+                            for ((index, delay) in retryDelays.withIndex()) {
+                                Thread.sleep(delay)
                                 copiedPath = NativeAudioScanner.scanAndAttachRecording(
                                     this@CallMonitorService,
-                                    CallStateReceiver.activeCallNumber,
+                                    targetNumber,
                                     startRef,
-                                    referenceTime
+                                    System.currentTimeMillis()
                                 )
+                                if (copiedPath != null) {
+                                    Log.d(TAG, "Audio recording linked on attempt ${index + 1}: $copiedPath")
+                                    notifyFlutterCallLogged()
+                                    break
+                                }
                             }
-                            if (copiedPath != null) {
-                                notifyFlutterCallLogged()
+
+                            if (copiedPath == null) {
+                                NativeAudioScanner.attachRecordingsToUnattachedCalls(this@CallMonitorService)
                             }
                         } catch (e: Exception) {
                             Log.w(TAG, "Audio recording scan error in service: ${e.message}")
